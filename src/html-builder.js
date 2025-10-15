@@ -410,7 +410,14 @@ function getClientScript() {
                 currentPage = 1;
                 hasMore = true;
                 currentCategory = category;
-                if (gallery) gallery.innerHTML = '';
+                if (gallery) {
+                    // 淡出旧内容
+                    gallery.style.opacity = '0.3';
+                    setTimeout(() => {
+                        gallery.innerHTML = '';
+                        gallery.style.opacity = '1';
+                    }, 200);
+                }
             }
             
             const pageSize = getPageSize();
@@ -434,20 +441,33 @@ function getClientScript() {
                 return;
             }
             
+            // 等待一小段时间，让加载提示显示
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
             // 创建文档片段以提高性能
             const fragment = document.createDocumentFragment();
             
             data.images.forEach((image, index) => {
                 try {
                     const card = createImageCard(image, true); // 启用懒加载
+                    // 为新卡片添加延迟动画，让它们依次淡入
+                    card.style.animationDelay = \`\${index * 0.05}s\`;
                     fragment.appendChild(card);
                 } catch (err) {
                     console.error(\`Failed to create card \${index}:\`, err);
                 }
             });
             
-            // 添加卡片到gallery
-            gallery.appendChild(fragment);
+            // 隐藏加载提示
+            showLoadingIndicator(false);
+            
+            // 稍微延迟后添加卡片，让加载提示消失更平滑
+            setTimeout(() => {
+                gallery.appendChild(fragment);
+                
+                // 触发重排以确保动画生效
+                void gallery.offsetHeight;
+            }, 100);
             
             // 更新状态
             hasMore = data.hasMore || false;
@@ -455,7 +475,7 @@ function getClientScript() {
             
             // 如果没有更多图片，显示完成提示
             if (!hasMore) {
-                showAllLoadedIndicator(true);
+                setTimeout(() => showAllLoadedIndicator(true), 500);
             }
             
             console.log(\`[LoadImages] Page loaded. HasMore: \${hasMore}, NextPage: \${currentPage}\`);
@@ -466,7 +486,6 @@ function getClientScript() {
             }
         } finally {
             isLoading = false;
-            showLoadingIndicator(false);
         }
     }
 

@@ -232,13 +232,30 @@ button:disabled {
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    transition: transform 0.3s, box-shadow 0.3s;
+    transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s ease-in-out;
     cursor: pointer;
     break-inside: avoid;
     page-break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
+    opacity: 1;
+    animation: fadeInUp 0.6s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.image-card.loading {
+    opacity: 0.3;
 }
 
 .image-card:hover {
@@ -488,6 +505,7 @@ button:disabled {
     text-align: center;
     padding: 40px 20px;
     color: white;
+    animation: fadeIn 0.3s ease-in;
 }
 
 .infinite-loading .spinner {
@@ -511,11 +529,21 @@ button:disabled {
     padding: 40px 20px;
     color: white;
     opacity: 0.7;
+    animation: fadeIn 0.5s ease-in;
 }
 
 .all-loaded p {
     font-size: 1.1rem;
     font-weight: 500;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.gallery {
+    transition: opacity 0.3s ease-in-out;
 }
 
 @media (max-width: 768px) {
@@ -718,12 +746,24 @@ h1, h2, h3 { color: white; }
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    transition: transform 0.3s;
+    transition: transform 0.3s, opacity 0.5s ease-in-out;
     break-inside: avoid;
     page-break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
+    opacity: 1;
+    animation: fadeInUp 0.6s ease-out;
+}
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 .image-card:hover { transform: translateY(-5px); }
 .image-card img {
