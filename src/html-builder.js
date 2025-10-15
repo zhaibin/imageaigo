@@ -970,7 +970,404 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
     const PAGE_TYPE = '${pageType}';
     const PAGE_PARAMS = ${JSON.stringify(pageParams)};
     
-    ${getClientScript(true, pageType, pageParams)}
+    // 点赞功能
+    async function toggleLike(imageId, button, event) {
+      if (event) event.preventDefault();
+      
+      try {
+        const isLiked = button.classList.contains('liked');
+        const endpoint = isLiked ? '/api/unlike' : '/api/like';
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageId })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success || data.liked !== undefined) {
+          button.classList.toggle('liked', data.liked);
+          const countEl = button.querySelector('.like-count');
+          if (countEl) {
+            countEl.textContent = data.likesCount || 0;
+          }
+        }
+      } catch (error) {
+        console.error('Like error:', error);
+      }
+    }
+    
+    const gallery = document.getElementById('gallery');
+    
+    // 无限滚动状态
+    let currentPage = 1;
+    let isLoading = false;
+    let hasMore = true;
+    let currentCategory = null;
+    
+    const infiniteLoading = document.getElementById('infiniteLoading');
+    const allLoaded = document.getElementById('allLoaded');
+    
+    // 瀑布流布局管理
+    let columnHeights = [];
+    let columnCount = 0;
+    let columnWidth = 0;
+    let columnGap = 20;
+    let cardPositions = new Map();
+    
+    // 根据设备类型和容器实际宽度确定列数和列宽
+    function getMasonryConfig() {
+        if (!gallery) return { columns: 4, columnWidth: 280, gap: 20, pageSize: 30 };
+        
+        const containerWidth = gallery.offsetWidth || gallery.clientWidth;
+        const screenWidth = window.innerWidth;
+        
+        let columns, minColumnWidth, gap, pageSize;
+        
+        if (screenWidth < 768) {
+            columns = 2;
+            minColumnWidth = 150;
+            gap = 15;
+            pageSize = 10;
+        } else if (screenWidth < 1024) {
+            columns = 3;
+            minColumnWidth = 200;
+            gap = 18;
+            pageSize = 20;
+        } else if (screenWidth < 1400) {
+            columns = 4;
+            minColumnWidth = 250;
+            gap = 20;
+            pageSize = 30;
+        } else {
+            columns = 5;
+            minColumnWidth = 280;
+            gap = 25;
+            pageSize = 30;
+        }
+        
+        const totalGapWidth = (columns - 1) * gap;
+        const availableWidth = containerWidth - totalGapWidth;
+        const calculatedColumnWidth = Math.floor(availableWidth / columns);
+        
+        if (calculatedColumnWidth < minColumnWidth && columns > 1) {
+            columns = columns - 1;
+            const newTotalGapWidth = (columns - 1) * gap;
+            const newAvailableWidth = containerWidth - newTotalGapWidth;
+            const finalColumnWidth = Math.floor(newAvailableWidth / columns);
+            return { columns, columnWidth: finalColumnWidth, gap, pageSize };
+        }
+        
+        return { columns, columnWidth: calculatedColumnWidth, gap, pageSize };
+    }
+    
+    function getPageSize() {
+        return getMasonryConfig().pageSize;
+    }
+    
+    function initMasonry() {
+        const config = getMasonryConfig();
+        columnCount = config.columns;
+        columnWidth = config.columnWidth;
+        columnGap = config.gap;
+        columnHeights = new Array(columnCount).fill(0);
+        
+        console.log('[Masonry] Init:', config);
+    }
+    
+    function getShortestColumn() {
+        let minHeight = columnHeights[0];
+        let minIndex = 0;
+        for (let i = 1; i < columnHeights.length; i++) {
+            if (columnHeights[i] < minHeight) {
+                minHeight = columnHeights[i];
+                minIndex = i;
+            }
+        }
+        return minIndex;
+    }
+    
+    function updateGalleryHeight() {
+        if (gallery) {
+            const maxHeight = Math.max(...columnHeights);
+            gallery.style.height = maxHeight + 'px';
+        }
+    }
+    
+    function showLoadingIndicator(show) {
+        if (infiniteLoading) {
+            infiniteLoading.style.display = show ? 'block' : 'none';
+        }
+    }
+    
+    function showAllLoadedIndicator(show) {
+        if (allLoaded) {
+            allLoaded.style.display = show ? 'block' : 'none';
+        }
+    }
+
+    async function loadImages(category = null, reset = false) {
+        if (isLoading || (!hasMore && !reset)) {
+            if (!hasMore && !reset) {
+                showAllLoadedIndicator(true);
+            }
+            return;
+        }
+        
+        try {
+            isLoading = true;
+            showLoadingIndicator(true);
+            showAllLoadedIndicator(false);
+            
+            if (reset || category !== currentCategory) {
+                currentPage = 1;
+                hasMore = true;
+                currentCategory = category;
+                if (gallery) {
+                    gallery.innerHTML = '';
+                    gallery.style.height = '0px';
+                }
+                initMasonry();
+            }
+            
+            const pageSize = getPageSize();
+            let url;
+            
+            if (typeof PAGE_TYPE !== 'undefined' && PAGE_TYPE === 'search') {
+                const query = PAGE_PARAMS.query || '';
+                url = \`/api/search?q=\${encodeURIComponent(query)}&page=\${currentPage}&limit=\${pageSize}\`;
+            } else if (typeof PAGE_TYPE !== 'undefined' && PAGE_TYPE === 'category') {
+                const categoryName = PAGE_PARAMS.category || '';
+                url = \`/api/category/\${encodeURIComponent(categoryName)}/images?page=\${currentPage}&limit=\${pageSize}\`;
+            } else if (typeof PAGE_TYPE !== 'undefined' && PAGE_TYPE === 'tag') {
+                const tagName = PAGE_PARAMS.tag || '';
+                url = \`/api/tag/\${encodeURIComponent(tagName)}/images?page=\${currentPage}&limit=\${pageSize}\`;
+            } else {
+                url = \`/api/images?page=\${currentPage}&limit=\${pageSize}\`;
+                if (category) url += '&category=' + encodeURIComponent(category);
+            }
+
+            console.log(\`[LoadImages] Fetching page \${currentPage}:\`, url);
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(\`HTTP \${response.status}\`);
+            
+            const data = await response.json();
+            console.log('[LoadImages] Received:', data.images?.length || 0, 'images');
+
+            if (!gallery) return;
+            
+            if (currentPage === 1 && (!data.images || data.images.length === 0)) {
+                gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px; position: relative;">No images found.</div>';
+                hasMore = false;
+                showLoadingIndicator(false);
+                showAllLoadedIndicator(true);
+                return;
+            }
+            
+            const newCards = [];
+            const imageLoadPromises = [];
+            
+            data.images.forEach((image, index) => {
+                try {
+                    const card = createImageCard(image);
+                    card.classList.add('card-new');
+                    card.style.visibility = 'hidden';
+                    gallery.appendChild(card);
+                    newCards.push(card);
+                    
+                    const img = card.querySelector('img');
+                    if (img) {
+                        const promise = new Promise((resolve) => {
+                            if (img.complete) {
+                                resolve();
+                            } else {
+                                img.addEventListener('load', resolve);
+                                img.addEventListener('error', resolve);
+                                setTimeout(resolve, 3000);
+                            }
+                        });
+                        imageLoadPromises.push(promise);
+                    }
+                } catch (err) {
+                    console.error(\`Failed to create card \${index}:\`, err);
+                }
+            });
+            
+            await Promise.all(imageLoadPromises);
+            console.log('[LoadImages] All images loaded, layouting...');
+            showLoadingIndicator(false);
+            
+            requestAnimationFrame(() => {
+                newCards.forEach((card, index) => {
+                    card.style.visibility = 'visible';
+                    
+                    const columnIndex = getShortestColumn();
+                    const left = columnIndex * (columnWidth + columnGap);
+                    const top = columnHeights[columnIndex];
+                    
+                    card.style.left = left + 'px';
+                    card.style.top = top + 'px';
+                    card.style.width = columnWidth + 'px';
+                    
+                    cardPositions.set(card, { columnIndex, top });
+                    
+                    const actualHeight = card.offsetHeight;
+                    columnHeights[columnIndex] = top + actualHeight + columnGap;
+                    
+                    setTimeout(() => {
+                        card.classList.add('card-visible');
+                        card.classList.remove('card-new');
+                    }, index * 30);
+                });
+                
+                updateGalleryHeight();
+            });
+            
+            hasMore = data.hasMore || false;
+            currentPage++;
+            
+            if (!hasMore) {
+                setTimeout(() => showAllLoadedIndicator(true), 500);
+            }
+            
+            console.log(\`[LoadImages] Page loaded. HasMore: \${hasMore}, NextPage: \${currentPage}\`);
+        } catch (error) {
+            console.error('[LoadImages] Error:', error);
+            if (currentPage === 1 && gallery) {
+                gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px; position: relative;">Error loading images. Please refresh.</div>';
+            }
+            showLoadingIndicator(false);
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    function createImageCard(image) {
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        
+        const link = document.createElement('a');
+        link.href = '/image/' + image.slug;
+        
+        const img = document.createElement('img');
+        img.src = image.image_url;
+        img.alt = image.description || 'Image';
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        if (image.width && image.height) {
+            img.style.aspectRatio = image.width + ' / ' + image.height;
+        }
+        
+        link.appendChild(img);
+        
+        const content = document.createElement('div');
+        content.className = 'image-card-content';
+        
+        const likeButton = document.createElement('div');
+        likeButton.className = 'like-button';
+        likeButton.innerHTML = '❤️';
+        likeButton.onclick = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleLike(image.id, likeButton, e);
+        };
+        const likeCount = document.createElement('span');
+        likeCount.className = 'like-count';
+        likeCount.textContent = image.likes_count || 0;
+        likeButton.appendChild(likeCount);
+        
+        const desc = document.createElement('p');
+        desc.className = 'image-description';
+        desc.textContent = image.description || '';
+        
+        content.appendChild(likeButton);
+        content.appendChild(desc);
+        
+        if (image.tags && image.tags.length > 0) {
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'tags';
+            image.tags.slice(0, 5).forEach(tag => {
+                const tagLink = document.createElement('a');
+                tagLink.href = (tag.level === 1 ? '/category/' : '/tag/') + encodeURIComponent(tag.name);
+                tagLink.className = 'tag level-' + tag.level;
+                tagLink.textContent = tag.name;
+                tagsDiv.appendChild(tagLink);
+            });
+            content.appendChild(tagsDiv);
+        }
+        
+        card.appendChild(link);
+        card.appendChild(content);
+        return card;
+    }
+
+    // 无限滚动
+    let scrollTimeout;
+    window.addEventListener('scroll', () => {
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+            if (isLoading || !hasMore) return;
+            
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            const windowHeight = window.innerHeight;
+            const documentHeight = document.documentElement.scrollHeight;
+            
+            if (scrollTop + windowHeight >= documentHeight - 800) {
+                console.log('[Scroll] Near bottom, loading more...');
+                loadImages();
+            }
+        }, 100);
+    });
+    
+    // 窗口大小改变时重新布局
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        if (resizeTimeout) clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            console.log('[Resize] Window resized, relaying out...');
+            const oldConfig = { columns: columnCount, columnWidth, gap: columnGap };
+            const newConfig = getMasonryConfig();
+            
+            if (oldConfig.columns !== newConfig.columns || oldConfig.columnWidth !== newConfig.columnWidth) {
+                initMasonry();
+                const allCards = Array.from(gallery.querySelectorAll('.image-card'));
+                
+                allCards.forEach(card => {
+                    const columnIndex = getShortestColumn();
+                    const left = columnIndex * (columnWidth + columnGap);
+                    const top = columnHeights[columnIndex];
+                    
+                    card.style.left = left + 'px';
+                    card.style.top = top + 'px';
+                    card.style.width = columnWidth + 'px';
+                    
+                    cardPositions.set(card, { columnIndex, top });
+                    
+                    const actualHeight = card.offsetHeight;
+                    columnHeights[columnIndex] = top + actualHeight + columnGap;
+                });
+                
+                updateGalleryHeight();
+            }
+        }, 500);
+    });
+
+    console.log('[Init] Initializing masonry layout...');
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            requestAnimationFrame(() => {
+                initMasonry();
+                loadImages();
+            });
+        });
+    } else {
+        requestAnimationFrame(() => {
+            initMasonry();
+            loadImages();
+        });
+    }
   </script>
 </body>
 </html>`;
