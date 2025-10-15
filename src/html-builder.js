@@ -461,102 +461,6 @@ function getClientScript() {
         return minIndex;
     }
     
-    // 布局单个卡片
-    function layoutCard(card) {
-        const columnIndex = getShortestColumn();
-        const left = columnIndex * (columnWidth + columnGap);
-        const top = columnHeights[columnIndex];
-        
-        card.style.left = left + 'px';
-        card.style.top = top + 'px';
-        card.style.width = columnWidth + 'px';
-        
-        // 存储卡片位置信息
-        cardPositions.set(card, { columnIndex, top });
-        
-        // 获取图片信息
-        const img = card.querySelector('img');
-        
-        // 定义更新高度的函数
-        const updateColumnHeight = () => {
-            // 获取卡片实际高度（图片加载后）
-            const actualHeight = card.offsetHeight;
-            const position = cardPositions.get(card);
-            
-            if (position) {
-                const { columnIndex: col, top: cardTop } = position;
-                
-                // 计算新的列高度：当前卡片top + 卡片实际高度 + 间距
-                // 注意：间距使用columnGap，确保上下间距 = 左右间距
-                const newColumnHeight = cardTop + actualHeight + columnGap;
-                
-                // 检查是否需要调整后续卡片
-                const oldColumnHeight = columnHeights[col];
-                const heightDiff = newColumnHeight - oldColumnHeight;
-                
-                if (heightDiff > 5) {
-                    // 实际需要的空间更大，调整后续卡片
-                    columnHeights[col] = newColumnHeight;
-                    adjustCardsBelow(col, cardTop, heightDiff);
-                    updateGalleryHeight();
-                } else if (heightDiff < -5) {
-                    // 实际需要的空间更小，但不向上移动后续卡片（避免闪动）
-                    // 保持原有列高度
-                } else {
-                    // 差异很小，更新列高度但不调整卡片
-                    columnHeights[col] = Math.max(columnHeights[col], newColumnHeight);
-                    updateGalleryHeight();
-                }
-            }
-        };
-        
-        // 先用aspect-ratio快速预估一个基础高度
-        if (img && img.style.aspectRatio) {
-            const aspectRatio = img.style.aspectRatio.split('/').map(Number);
-            if (aspectRatio.length === 2 && aspectRatio[0] && aspectRatio[1]) {
-                const ratio = aspectRatio[1] / aspectRatio[0];
-                const imageHeight = columnWidth * ratio;
-                // 内容区域高度：padding(40) + 描述(70) + 标签(35) + 点赞(20) = 165px
-                const estimatedCardHeight = imageHeight + 165;
-                
-                // 临时占位，防止后续卡片过早布局
-                columnHeights[columnIndex] = top + estimatedCardHeight + columnGap;
-                updateGalleryHeight();
-            } else {
-                // 没有aspect-ratio，使用保守估计（columnWidth * 1.3 + 内容165px）
-                columnHeights[columnIndex] = top + (columnWidth * 1.3) + 165 + columnGap;
-                updateGalleryHeight();
-            }
-        } else {
-            // 没有图片或aspect-ratio，保守估计
-            columnHeights[columnIndex] = top + (columnWidth * 1.3) + 165 + columnGap;
-            updateGalleryHeight();
-        }
-        
-        // 等待图片加载完成后，使用实际高度更新
-        if (img) {
-            if (img.complete) {
-                setTimeout(updateColumnHeight, 0);
-            } else {
-                img.addEventListener('load', updateColumnHeight);
-                img.addEventListener('error', updateColumnHeight);
-            }
-        } else {
-            setTimeout(updateColumnHeight, 50);
-        }
-    }
-    
-    // 调整某列中某个位置之后的所有卡片
-    function adjustCardsBelow(columnIndex, topThreshold, heightDiff) {
-        cardPositions.forEach((position, card) => {
-            if (position.columnIndex === columnIndex && position.top > topThreshold) {
-                const currentTop = parseInt(card.style.top) || position.top;
-                const newTop = currentTop + heightDiff;
-                card.style.top = newTop + 'px';
-                position.top = newTop;
-            }
-        });
-    }
     
     // 更新gallery的总高度
     function updateGalleryHeight() {
@@ -626,32 +530,76 @@ function getClientScript() {
                 return;
             }
             
-            // 隐藏加载提示
-            showLoadingIndicator(false);
-            
-            // 创建新卡片
+            // 创建新卡片（先隐藏，等图片加载完再显示）
             const newCards = [];
+            const imageLoadPromises = [];
+            
             data.images.forEach((image, index) => {
                 try {
                     const card = createImageCard(image, true);
                     card.classList.add('card-new');
+                    card.style.visibility = 'hidden'; // 完全隐藏，不占用布局空间
                     gallery.appendChild(card);
                     newCards.push(card);
+                    
+                    // 等待图片加载
+                    const img = card.querySelector('img');
+                    if (img) {
+                        const promise = new Promise((resolve) => {
+                            if (img.complete) {
+                                resolve();
+                            } else {
+                                img.addEventListener('load', resolve);
+                                img.addEventListener('error', resolve);
+                                // 超时保护：最多等待3秒
+                                setTimeout(resolve, 3000);
+                            }
+                        });
+                        imageLoadPromises.push(promise);
+                    }
                 } catch (err) {
                     console.error(\`Failed to create card \${index}:\`, err);
                 }
             });
             
-            // 布局新卡片（直接显示，无动画跳动）
+            // 等待所有图片加载完成
+            await Promise.all(imageLoadPromises);
+            
+            console.log('[LoadImages] All images loaded, layouting...');
+            
+            // 隐藏加载提示
+            showLoadingIndicator(false);
+            
+            // 所有图片加载完成后，使用实际高度布局
             requestAnimationFrame(() => {
                 newCards.forEach((card, index) => {
-                    layoutCard(card);
-                    // 快速淡入（200ms，很快不会造成等待感）
+                    // 显示卡片用于获取真实高度
+                    card.style.visibility = 'visible';
+                    
+                    // 使用真实高度布局
+                    const columnIndex = getShortestColumn();
+                    const left = columnIndex * (columnWidth + columnGap);
+                    const top = columnHeights[columnIndex];
+                    
+                    card.style.left = left + 'px';
+                    card.style.top = top + 'px';
+                    card.style.width = columnWidth + 'px';
+                    
+                    // 存储位置
+                    cardPositions.set(card, { columnIndex, top });
+                    
+                    // 使用实际高度更新列高度（确保间距精确）
+                    const actualHeight = card.offsetHeight;
+                    columnHeights[columnIndex] = top + actualHeight + columnGap;
+                    
+                    // 快速淡入
                     setTimeout(() => {
                         card.classList.add('card-visible');
                         card.classList.remove('card-new');
                     }, index * 30);
                 });
+                
+                updateGalleryHeight();
             });
             
             // 更新状态
@@ -872,10 +820,25 @@ function getClientScript() {
             // 只有在列数或列宽变化时才重新布局
             if (oldConfig.columns !== newConfig.columns || oldConfig.columnWidth !== newConfig.columnWidth) {
                 initMasonry();
-                const allCards = gallery.querySelectorAll('.image-card');
+                const allCards = Array.from(gallery.querySelectorAll('.image-card'));
+                
+                // 重新布局所有卡片
                 allCards.forEach(card => {
-                    layoutCard(card);
+                    const columnIndex = getShortestColumn();
+                    const left = columnIndex * (columnWidth + columnGap);
+                    const top = columnHeights[columnIndex];
+                    
+                    card.style.left = left + 'px';
+                    card.style.top = top + 'px';
+                    card.style.width = columnWidth + 'px';
+                    
+                    cardPositions.set(card, { columnIndex, top });
+                    
+                    const actualHeight = card.offsetHeight;
+                    columnHeights[columnIndex] = top + actualHeight + columnGap;
                 });
+                
+                updateGalleryHeight();
             }
         }, 500);
     });
