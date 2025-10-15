@@ -806,10 +806,25 @@ function getClientScript() {
     });
 
     console.log('[Init] Initializing masonry layout...');
-    initMasonry();
-    console.log('[Init] Loading images and categories...');
-    loadImages(null, true); // 初始加载，reset=true
-    loadCategories();
+    
+    // 确保DOM完全加载后再初始化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            initMasonry();
+            loadImages(null, true);
+            loadCategories();
+        });
+    } else {
+        // 延迟一帧确保gallery宽度已确定
+        requestAnimationFrame(() => {
+            initMasonry();
+            console.log('[Init] Container width:', gallery?.parentElement?.offsetWidth);
+            console.log('[Init] Gallery width:', gallery?.offsetWidth);
+            loadImages(null, true);
+            loadCategories();
+        });
+    }
+    
     console.log('[Init] Setup complete, infinite scroll enabled');
 </script>`;
 }

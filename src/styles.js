@@ -14,6 +14,7 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     padding: 20px;
+    overflow-x: hidden;
 }
 
 .container {
@@ -556,6 +557,7 @@ body {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
   padding: 20px;
+  overflow-x: hidden;
 }
 .container {
   max-width: 900px;
@@ -650,6 +652,7 @@ body {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   min-height: 100vh;
   padding: 20px;
+  overflow-x: hidden;
 }
 .container { max-width: 95%; width: 100%; margin: 0 auto; }
 @media (min-width: 1920px) {
