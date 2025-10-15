@@ -474,77 +474,75 @@ function getClientScript() {
         // 存储卡片位置信息
         cardPositions.set(card, { columnIndex, top });
         
-        // 获取图片信息用于预估高度
+        // 获取图片信息
         const img = card.querySelector('img');
-        let estimatedHeight = 0;
         
-        // 方法1：使用aspect-ratio预估高度
-        if (img && img.style.aspectRatio) {
-            const aspectRatio = img.style.aspectRatio.split('/').map(Number);
-            if (aspectRatio.length === 2 && aspectRatio[0] && aspectRatio[1]) {
-                const ratio = aspectRatio[1] / aspectRatio[0];
-                estimatedHeight = columnWidth * ratio;
-            }
-        }
-        
-        // 方法2：使用默认高度预估（如果没有aspect-ratio）
-        if (!estimatedHeight) {
-            estimatedHeight = columnWidth * 0.75; // 默认4:3比例
-        }
-        
-        // 加上内容区域的估计高度（描述+标签+padding）
-        const contentPadding = 40; // 上下padding各20px
-        const descriptionHeight = 50; // 估计3行文字高度
-        const tagsHeight = 25; // 估计标签高度
-        const likeButtonHeight = 15; // 点赞按钮额外空间
-        estimatedHeight += contentPadding + descriptionHeight + tagsHeight + likeButtonHeight;
-        
-        // 立即使用预估高度更新列高度，避免卡片重叠
-        columnHeights[columnIndex] = top + estimatedHeight + columnGap;
-        updateGalleryHeight();
-        
-        // 图片加载完成后更新为实际高度
-        const updateActualHeight = () => {
+        // 定义更新高度的函数
+        const updateColumnHeight = () => {
+            // 获取卡片实际高度（图片加载后）
             const actualHeight = card.offsetHeight;
             const position = cardPositions.get(card);
             
             if (position) {
                 const { columnIndex: col, top: cardTop } = position;
                 
-                // 计算高度差异
-                const heightDiff = actualHeight - estimatedHeight;
-                
-                // 更新该列的实际高度
-                const currentColumnHeight = columnHeights[col];
+                // 计算新的列高度：当前卡片top + 卡片实际高度 + 间距
+                // 注意：间距使用columnGap，确保上下间距 = 左右间距
                 const newColumnHeight = cardTop + actualHeight + columnGap;
                 
-                // 只有当实际高度大于预估高度时才需要调整
-                if (heightDiff > 10 && newColumnHeight > currentColumnHeight) {
-                    // 更新该列高度
+                // 检查是否需要调整后续卡片
+                const oldColumnHeight = columnHeights[col];
+                const heightDiff = newColumnHeight - oldColumnHeight;
+                
+                if (heightDiff > 5) {
+                    // 实际需要的空间更大，调整后续卡片
                     columnHeights[col] = newColumnHeight;
-                    
-                    // 调整该列后续的所有卡片位置
                     adjustCardsBelow(col, cardTop, heightDiff);
-                    
                     updateGalleryHeight();
-                } else if (heightDiff < -10) {
-                    // 实际高度小于预估，只更新列高度，不需要调整卡片位置
-                    columnHeights[col] = Math.max(currentColumnHeight, newColumnHeight);
+                } else if (heightDiff < -5) {
+                    // 实际需要的空间更小，但不向上移动后续卡片（避免闪动）
+                    // 保持原有列高度
+                } else {
+                    // 差异很小，更新列高度但不调整卡片
+                    columnHeights[col] = Math.max(columnHeights[col], newColumnHeight);
                     updateGalleryHeight();
                 }
             }
         };
         
-        // 等待图片加载
-        if (img) {
-            if (img.complete) {
-                updateActualHeight();
+        // 先用aspect-ratio快速预估一个基础高度
+        if (img && img.style.aspectRatio) {
+            const aspectRatio = img.style.aspectRatio.split('/').map(Number);
+            if (aspectRatio.length === 2 && aspectRatio[0] && aspectRatio[1]) {
+                const ratio = aspectRatio[1] / aspectRatio[0];
+                const imageHeight = columnWidth * ratio;
+                // 内容区域高度：padding(40) + 描述(70) + 标签(35) + 点赞(20) = 165px
+                const estimatedCardHeight = imageHeight + 165;
+                
+                // 临时占位，防止后续卡片过早布局
+                columnHeights[columnIndex] = top + estimatedCardHeight + columnGap;
+                updateGalleryHeight();
             } else {
-                img.addEventListener('load', updateActualHeight);
-                img.addEventListener('error', updateActualHeight);
+                // 没有aspect-ratio，使用保守估计（columnWidth * 1.3 + 内容165px）
+                columnHeights[columnIndex] = top + (columnWidth * 1.3) + 165 + columnGap;
+                updateGalleryHeight();
             }
         } else {
-            setTimeout(updateActualHeight, 100);
+            // 没有图片或aspect-ratio，保守估计
+            columnHeights[columnIndex] = top + (columnWidth * 1.3) + 165 + columnGap;
+            updateGalleryHeight();
+        }
+        
+        // 等待图片加载完成后，使用实际高度更新
+        if (img) {
+            if (img.complete) {
+                setTimeout(updateColumnHeight, 0);
+            } else {
+                img.addEventListener('load', updateColumnHeight);
+                img.addEventListener('error', updateColumnHeight);
+            }
+        } else {
+            setTimeout(updateColumnHeight, 50);
         }
     }
     
