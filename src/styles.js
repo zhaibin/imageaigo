@@ -628,29 +628,26 @@ h1, h2, h3 { color: white; }
 }
 .back-link:hover { background: rgba(255,255,255,0.3); }
 .gallery, .image-detail-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  columns: 4 280px;
+  column-gap: 20px;
   width: 100%;
-  grid-auto-rows: auto;
-  align-items: start;
 }
 @media (max-width: 768px) {
   .gallery, .image-detail-container {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 15px;
+    columns: 2 160px;
+    column-gap: 15px;
   }
 }
 @media (min-width: 769px) and (max-width: 1024px) {
   .gallery, .image-detail-container {
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 18px;
+    columns: 3 220px;
+    column-gap: 18px;
   }
 }
 @media (min-width: 1400px) {
   .gallery, .image-detail-container {
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 25px;
+    columns: 5 300px;
+    column-gap: 25px;
   }
 }
 .image-card {
