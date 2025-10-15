@@ -1,5 +1,77 @@
 # 更新日志
 
+## [v2.0.1] - 2024-10-15
+
+### 🐛 修复卡死问题
+
+**问题：**
+- 队列消费者串行处理消息（for循环）
+- 一个消息卡住导致整批卡死
+
+**解决方案：**
+- 改为并发处理（`Promise.allSettled`）
+- 每次最多 3 个消息并发
+- 组间延迟 1 秒避免资源竞争
+- 消息间完全隔离，互不影响
+
+### ✨ 新功能：Unsplash 自动同步
+
+#### 定时同步
+- **Cron Trigger**：每天 00:00 UTC 自动运行
+- 自动获取 Unsplash 最新图片（10张/天）
+- AI 自动分析和标签
+- 重复图片智能跳过
+
+#### 手动同步
+- 管理后台新增"同步 Unsplash"按钮
+- 实时显示同步结果（处理/跳过/失败）
+- 自动刷新图片列表和统计
+
+#### 智能处理
+- 下载图片（regular 尺寸，平衡质量和大小）
+- SHA-256 哈希检测重复
+- 并发处理（每次3张）
+- 自动记录来源信息（作者、链接）
+
+### 🔧 技术实现
+
+**队列优化：**
+```javascript
+// 之前：串行处理
+for (const message of batch.messages) {
+  await processMessage(message); // 卡死点
+}
+
+// 现在：并发处理
+for (let i = 0; i < messages.length; i += 3) {
+  await Promise.allSettled(
+    messages.slice(i, i + 3).map(processMessage)
+  ); // 隔离，互不影响
+}
+```
+
+**新增文件：**
+- `src/unsplash-sync.js` - Unsplash 同步逻辑（207行）
+- `UNSPLASH_SETUP.md` - 配置指南
+
+**修改文件：**
+- `wrangler.toml` - 添加 Cron Trigger
+- `src/index.js` - scheduled() 导出、手动同步API
+- `src/admin.js` - Unsplash 同步 UI
+- `src/queue-handler.js` - 并发处理消息
+
+### 📝 配置要求
+
+需要设置 Unsplash API Key：
+
+```bash
+wrangler secret put UNSPLASH_ACCESS_KEY
+```
+
+详见：`UNSPLASH_SETUP.md`
+
+---
+
 ## [v2.0.0] - 2024-10-15
 
 ### 🚀 重大架构升级
