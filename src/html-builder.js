@@ -446,13 +446,15 @@ function getClientScript() {
             
             // 创建文档片段以提高性能
             const fragment = document.createDocumentFragment();
+            const newCards = [];
             
             data.images.forEach((image, index) => {
                 try {
                     const card = createImageCard(image, true); // 启用懒加载
-                    // 为新卡片添加延迟动画，让它们依次淡入
-                    card.style.animationDelay = \`\${index * 0.05}s\`;
+                    // 新卡片初始设置为隐藏状态
+                    card.classList.add('card-enter');
                     fragment.appendChild(card);
+                    newCards.push({ card, delay: index * 50 }); // 每个卡片延迟50ms
                 } catch (err) {
                     console.error(\`Failed to create card \${index}:\`, err);
                 }
@@ -461,13 +463,20 @@ function getClientScript() {
             // 隐藏加载提示
             showLoadingIndicator(false);
             
-            // 稍微延迟后添加卡片，让加载提示消失更平滑
-            setTimeout(() => {
-                gallery.appendChild(fragment);
-                
-                // 触发重排以确保动画生效
-                void gallery.offsetHeight;
-            }, 100);
+            // 添加卡片到gallery
+            gallery.appendChild(fragment);
+            
+            // 使用requestAnimationFrame确保DOM已更新，然后触发淡入动画
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    newCards.forEach(({ card, delay }) => {
+                        setTimeout(() => {
+                            card.classList.add('card-enter-active');
+                            card.classList.remove('card-enter');
+                        }, delay);
+                    });
+                });
+            });
             
             // 更新状态
             hasMore = data.hasMore || false;

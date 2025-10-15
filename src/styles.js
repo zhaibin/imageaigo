@@ -232,30 +232,26 @@ button:disabled {
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    transition: transform 0.3s, box-shadow 0.3s, opacity 0.5s ease-in-out;
+    transition: transform 0.3s, box-shadow 0.3s;
     cursor: pointer;
     break-inside: avoid;
     page-break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
+}
+
+/* 新卡片初始隐藏 */
+.image-card.card-enter {
+    opacity: 0;
+    transform: translateY(30px);
+}
+
+/* 淡入状态 */
+.image-card.card-enter-active {
     opacity: 1;
-    animation: fadeInUp 0.6s ease-out;
-}
-
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.image-card.loading {
-    opacity: 0.3;
+    transform: translateY(0);
+    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
 }
 
 .image-card:hover {
@@ -746,24 +742,23 @@ h1, h2, h3 { color: white; }
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    transition: transform 0.3s, opacity 0.5s ease-in-out;
+    transition: transform 0.3s, box-shadow 0.3s;
     break-inside: avoid;
     page-break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
-    opacity: 1;
-    animation: fadeInUp 0.6s ease-out;
 }
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+/* 新卡片初始隐藏 */
+.image-card.card-enter {
+    opacity: 0;
+    transform: translateY(30px);
+}
+/* 淡入状态 */
+.image-card.card-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
 }
 .image-card:hover { transform: translateY(-5px); }
 .image-card img {
