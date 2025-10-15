@@ -201,30 +201,29 @@ button:disabled {
 }
 
 .gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
+    columns: 4 280px;
+    column-gap: 20px;
     width: 100%;
 }
 
 @media (max-width: 768px) {
     .gallery {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 15px;
+        columns: 2 160px;
+        column-gap: 15px;
     }
 }
 
 @media (min-width: 769px) and (max-width: 1024px) {
     .gallery {
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-        gap: 18px;
+        columns: 3 220px;
+        column-gap: 18px;
     }
 }
 
 @media (min-width: 1400px) {
     .gallery {
-        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-        gap: 25px;
+        columns: 5 300px;
+        column-gap: 25px;
     }
 }
 
@@ -236,6 +235,7 @@ button:disabled {
     transition: transform 0.3s, box-shadow 0.3s;
     cursor: pointer;
     break-inside: avoid;
+    page-break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
@@ -656,9 +656,11 @@ h1, h2, h3 { color: white; }
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     transition: transform 0.3s;
-    display: flex;
-    flex-direction: column;
-    height: fit-content;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 20px;
+    display: inline-block;
+    width: 100%;
 }
 .image-card:hover { transform: translateY(-5px); }
 .image-card img {
