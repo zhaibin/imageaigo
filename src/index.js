@@ -1249,17 +1249,42 @@ async function handleTagPage(request, env, tagName) {
     LIMIT 50
   `).bind(tagName).all();
   
-  const imageCards = images.map(img => `
+  // 获取每张图片的标签
+  for (let img of images) {
+    const { results: tagResults } = await env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+      LIMIT 5
+    `).bind(img.id).all();
+    img.tags = tagResults;
+  }
+  
+  const imageCards = images.map(img => {
+    const tagsHTML = img.tags && img.tags.length > 0 ? `
+      <div class="tags">
+        ${img.tags.slice(0, 5).map(tag => `
+          <a href="${tag.level === 1 ? '/category/' : '/tag/'}${encodeURIComponent(tag.name)}" class="tag level-${tag.level}">
+            ${escapeHtml(tag.name)}
+          </a>
+        `).join('')}
+      </div>
+    ` : '';
+    
+    return `
     <article class="image-card">
       <a href="/image/${img.slug}">
         <img src="${img.image_url}" alt="${escapeHtml(img.description || tagName)}" loading="lazy"${img.width && img.height ? ` style="aspect-ratio: ${img.width} / ${img.height}"` : ''}>
       </a>
       <div class="image-info">
         <p>${escapeHtml(img.description || '')}</p>
+        ${tagsHTML}
         <div class="likes">❤️ ${img.likes_count || 0} likes</div>
       </div>
     </article>
-  `).join('');
+    `;
+  }).join('');
   
   const html = buildPageTemplate({
     title: `${tagName} Images | ImageAI Go`,
@@ -1289,13 +1314,37 @@ async function handleCategoryPage(request, env, path) {
     LIMIT 50
   `).bind(category).all();
   
-  const imageCards = images.map(img => `
+  // 获取每张图片的标签
+  for (let img of images) {
+    const { results: tagResults } = await env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+      LIMIT 5
+    `).bind(img.id).all();
+    img.tags = tagResults;
+  }
+  
+  const imageCards = images.map(img => {
+    const tagsHTML = img.tags && img.tags.length > 0 ? `
+      <div class="tags">
+        ${img.tags.slice(0, 5).map(tag => `
+          <a href="${tag.level === 1 ? '/category/' : '/tag/'}${encodeURIComponent(tag.name)}" class="tag level-${tag.level}">
+            ${escapeHtml(tag.name)}
+          </a>
+        `).join('')}
+      </div>
+    ` : '';
+    
+    return `
     <article class="image-card" data-image-id="${img.id}">
       <a href="/image/${img.slug}">
         <img src="${img.image_url}" alt="${escapeHtml(img.description || category)}" loading="lazy"${img.width && img.height ? ` style="aspect-ratio: ${img.width} / ${img.height}"` : ''}>
       </a>
       <div class="image-info">
         <p>${escapeHtml(img.description || '')}</p>
+        ${tagsHTML}
         <div class="likes">
           <button class="like-btn" onclick="toggleLike(${img.id}, this, event)" aria-label="Like this image">
             ❤️ <span class="like-count">${img.likes_count || 0}</span>
@@ -1303,7 +1352,8 @@ async function handleCategoryPage(request, env, path) {
         </div>
       </div>
     </article>
-  `).join('');
+    `;
+  }).join('');
   
   const html = buildPageTemplate({
     title: `${category} Images - ImageAI Go`,
