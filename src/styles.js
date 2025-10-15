@@ -9,6 +9,11 @@ export const MAIN_STYLES = `
     box-sizing: border-box;
 }
 
+a {
+    text-decoration: none;
+    color: inherit;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -534,6 +539,7 @@ button:disabled {
 
 export const LEGAL_STYLES = `
 * { margin: 0; padding: 0; box-sizing: border-box; }
+a { text-decoration: none; color: inherit; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -629,6 +635,7 @@ footer {
 
 export const PAGE_TEMPLATE_STYLES = `
 * { margin: 0; padding: 0; box-sizing: border-box; }
+a { text-decoration: none; color: inherit; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
