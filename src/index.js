@@ -993,12 +993,22 @@ async function handleImageDetailPage(request, env, imageSlug) {
       padding: 20px;
     }
     .container { max-width: 1400px; margin: 0 auto; }
-    .back-link {
-      display: inline-block; color: white; text-decoration: none;
-      padding: 10px 20px; background: rgba(255,255,255,0.2);
-      border-radius: 20px; margin-bottom: 20px;
+    .floating-back-btn {
+      position: fixed; top: 20px; right: 20px;
+      width: 45px; height: 45px;
+      background: rgba(255,255,255,0.95);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #667eea; text-decoration: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: all 0.3s ease; z-index: 999;
+      backdrop-filter: blur(10px);
     }
-    .back-link:hover { background: rgba(255,255,255,0.3); }
+    .floating-back-btn:hover {
+      background: white; transform: scale(1.1);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+    }
+    .floating-back-btn svg { display: block; }
     
     .detail-container {
       display: grid;
@@ -1132,9 +1142,12 @@ async function handleImageDetailPage(request, env, imageSlug) {
   </style>
 </head>
 <body>
+  <a href="/" class="floating-back-btn" title="Back to Home">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+  </a>
   <div class="container">
-    <a href="/" class="back-link">← Back to Home</a>
-    
     <div class="detail-container">
       <div class="image-section">
         <img src="${image.image_url}" alt="${escapeHtml(image.description)}" loading="lazy" decoding="async" ${image.width && image.height ? `style="aspect-ratio: ${image.width} / ${image.height}"` : ''}>
@@ -1421,9 +1434,6 @@ async function handleSearchPage(request, env) {
   const query = url.searchParams.get('q') || '';
   
   const content = `
-    <form method="GET" action="/search" style="margin-bottom: 30px;">
-      <input type="search" name="q" placeholder="Search..." value="${escapeHtml(query)}" style="width: 100%; padding: 12px 20px; border: 2px solid #667eea; border-radius: 25px; font-size: 1rem;">
-    </form>
     <div id="searchResults"></div>
     <script>
       async function performSearch() {
@@ -1499,7 +1509,9 @@ async function handleSearchPage(request, env) {
     heading: query ? 'Search Results' : 'Search Images',
     subtitle: query ? `Results for "${query}"` : 'Find images',
     content,
-    canonical: `https://imageaigo.cc/search${query ? '?q=' + encodeURIComponent(query) : ''}`
+    canonical: `https://imageaigo.cc/search${query ? '?q=' + encodeURIComponent(query) : ''}`,
+    searchBox: true,
+    searchQuery: query
   });
   
   return new Response(html, {

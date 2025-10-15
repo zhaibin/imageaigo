@@ -568,19 +568,44 @@ ul {
   margin-left: 30px;
   margin-bottom: 20px;
 }
-.back-link {
-  display: inline-block;
-  color: white;
-  background: #667eea;
+/* 浮动返回按钮 */
+.floating-back-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 45px;
+  height: 45px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667eea;
   text-decoration: none;
-  padding: 12px 24px;
-  border-radius: 25px;
-  margin-bottom: 30px;
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  transition: all 0.3s ease;
+  z-index: 999;
+  backdrop-filter: blur(10px);
 }
-.back-link:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+.floating-back-btn:hover {
+  background: white;
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+}
+.floating-back-btn svg {
+  display: block;
+}
+@media (max-width: 768px) {
+  .floating-back-btn {
+    top: 15px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+  }
+  .floating-back-btn svg {
+    width: 18px;
+    height: 18px;
+  }
 }
 .update-date {
   margin-top: 40px;
@@ -626,7 +651,45 @@ h1, h2, h3 { color: white; }
   margin-bottom: 20px;
   transition: background 0.3s;
 }
-.back-link:hover { background: rgba(255,255,255,0.3); }
+/* 浮动返回按钮 */
+.floating-back-btn {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 45px;
+  height: 45px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #667eea;
+  text-decoration: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  transition: all 0.3s ease;
+  z-index: 999;
+  backdrop-filter: blur(10px);
+}
+.floating-back-btn:hover {
+  background: white;
+  transform: scale(1.1);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+}
+.floating-back-btn svg {
+  display: block;
+}
+@media (max-width: 768px) {
+  .floating-back-btn {
+    top: 15px;
+    right: 15px;
+    width: 40px;
+    height: 40px;
+  }
+  .floating-back-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+}
 .gallery, .image-detail-container {
   columns: 4 280px;
   column-gap: 20px;

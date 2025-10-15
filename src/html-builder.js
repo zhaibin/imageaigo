@@ -683,8 +683,12 @@ export function buildLegalPage(title, heading, content) {
   <style>${LEGAL_STYLES}</style>
 </head>
 <body>
+  <a href="/" class="floating-back-btn" title="Back to Home">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+  </a>
   <div class="container">
-    <a href="/" class="back-link">← Back to Home</a>
     <header>
       <h1>${heading}</h1>
     </header>
@@ -697,7 +701,7 @@ export function buildLegalPage(title, heading, content) {
 </html>`;
 }
 
-export function buildPageTemplate({ title, description, heading, subtitle, content, canonical, ogImage }) {
+export function buildPageTemplate({ title, description, heading, subtitle, content, canonical, ogImage, searchBox = false, searchQuery = '' }) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -715,11 +719,20 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
   <style>${PAGE_TEMPLATE_STYLES}</style>
 </head>
 <body>
+  <a href="/" class="floating-back-btn" title="Back to Home">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M19 12H5M12 19l-7-7 7-7"/>
+    </svg>
+  </a>
   <div class="container">
     <header>
-      <a href="/" class="back-link">← Back to Home</a>
       <h1>${escapeHtml(heading)}</h1>
       <p>${escapeHtml(subtitle)}</p>
+      ${searchBox ? `
+        <form method="GET" action="/search" style="margin-top: 20px; max-width: 600px; margin-left: auto; margin-right: auto;">
+          <input type="search" name="q" placeholder="🔍 Search images..." value="${escapeHtml(searchQuery)}" style="width: 100%; padding: 12px 20px; border: none; border-radius: 25px; font-size: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+        </form>
+      ` : ''}
     </header>
     <main class="gallery">
       ${content}
