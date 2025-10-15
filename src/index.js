@@ -175,6 +175,10 @@ export default {
         return await handleAdminBatchStatus(request, env);
       }
 
+      if (path === '/api/admin/batch-cancel' && request.method === 'POST') {
+        return await handleAdminBatchCancel(request, env);
+      }
+
       if (path.startsWith('/api/image-json/')) {
         const imageSlug = path.replace('/api/image-json/', '');
         return await handleGetImageJson(imageSlug, env);
@@ -1932,6 +1936,8 @@ async function handleAdminBatchUpload(request, env, ctx) {
       processing: 0,
       status: 'processing',
       startTime: Date.now(),
+      lastActivity: Date.now(),  // 最后活动时间
+      currentFile: '',  // 当前处理的文件
       files: files.map(f => ({ name: f.name, status: 'pending' }))
     };
     
@@ -1973,11 +1979,18 @@ async function processBatchUpload(files, env, batchId) {
   console.log(`[BatchProcess:${batchId}] Starting to process ${files.length} files`);
   
   for (let i = 0; i < files.length; i++) {
+    // 检查批次是否被取消
+    const shouldContinue = await checkBatchStatus(env, batchId);
+    if (!shouldContinue) {
+      console.log(`[BatchProcess:${batchId}] Batch cancelled by user, stopping...`);
+      break;
+    }
+    
     const file = files[i];
     console.log(`[BatchProcess:${batchId}] Processing file ${i + 1}/${files.length}: ${file.name}`);
     
-    // 更新状态：正在处理
-    await updateBatchStatus(env, batchId, i, 'processing');
+    // 更新状态：正在处理（包含当前文件名和活动时间）
+    await updateBatchStatus(env, batchId, i, 'processing', null, file.name);
     
     try {
       const imageData = await file.arrayBuffer();
@@ -2073,8 +2086,24 @@ async function processBatchUpload(files, env, batchId) {
   console.log(`[BatchProcess:${batchId}] Completed processing ${files.length} files`);
 }
 
+// 检查批次是否应该继续处理
+async function checkBatchStatus(env, batchId) {
+  try {
+    const statusKey = `batch:${batchId}`;
+    const currentStatus = await env.CACHE.get(statusKey);
+    
+    if (!currentStatus) return false;
+    
+    const batchStatus = JSON.parse(currentStatus);
+    return batchStatus.status === 'processing';
+  } catch (err) {
+    console.error(`[CheckBatchStatus] Error:`, err);
+    return false;
+  }
+}
+
 // 更新批次状态
-async function updateBatchStatus(env, batchId, fileIndex, status, error = null) {
+async function updateBatchStatus(env, batchId, fileIndex, status, error = null, currentFile = null) {
   try {
     const statusKey = `batch:${batchId}`;
     const currentStatus = await env.CACHE.get(statusKey);
@@ -2092,6 +2121,12 @@ async function updateBatchStatus(env, batchId, fileIndex, status, error = null) 
     batchStatus.failed = batchStatus.files.filter(f => f.status === 'failed').length;
     batchStatus.skipped = batchStatus.files.filter(f => f.status === 'skipped').length;
     batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
+    
+    // 更新最后活动时间和当前文件
+    batchStatus.lastActivity = Date.now();
+    if (currentFile) {
+      batchStatus.currentFile = currentFile;
+    }
     
     await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
   } catch (err) {
@@ -2131,11 +2166,23 @@ async function handleAdminBatchStatus(request, env) {
     // 获取所有批次状态
     const batchKeys = await env.CACHE.list({ prefix: 'batch:' });
     const batches = [];
+    const now = Date.now();
     
     for (const key of batchKeys.keys) {
       const statusData = await env.CACHE.get(key.name);
       if (statusData) {
-        batches.push(JSON.parse(statusData));
+        const batch = JSON.parse(statusData);
+        
+        // 检测疑似卡死（超过2分钟没有活动）
+        if (batch.status === 'processing' && batch.lastActivity) {
+          const inactiveTime = now - batch.lastActivity;
+          if (inactiveTime > 120000) { // 2分钟
+            batch.possiblyStuck = true;
+            batch.inactiveSeconds = Math.floor(inactiveTime / 1000);
+          }
+        }
+        
+        batches.push(batch);
       }
     }
     
@@ -2150,6 +2197,63 @@ async function handleAdminBatchStatus(request, env) {
     });
   } catch (error) {
     console.error('[BatchStatus] Error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 取消批次
+async function handleAdminBatchCancel(request, env) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const { batchId } = await request.json();
+    
+    if (!batchId) {
+      return new Response(JSON.stringify({ error: 'batchId is required' }), {
+        status: 400,
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const statusKey = `batch:${batchId}`;
+    const currentStatus = await env.CACHE.get(statusKey);
+    
+    if (!currentStatus) {
+      return new Response(JSON.stringify({ error: 'Batch not found' }), {
+        status: 404,
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const batchStatus = JSON.parse(currentStatus);
+    
+    // 标记为已取消
+    batchStatus.status = 'cancelled';
+    batchStatus.cancelledAt = Date.now();
+    batchStatus.endTime = Date.now();
+    batchStatus.duration = batchStatus.endTime - batchStatus.startTime;
+    
+    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+    
+    console.log(`[BatchCancel] Batch ${batchId} cancelled by admin`);
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Batch cancelled successfully',
+      batchId
+    }), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('[BatchCancel] Error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }

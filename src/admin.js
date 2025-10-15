@@ -1278,16 +1278,38 @@ export function buildAdminDashboard() {
       const processed = (batch.completed || 0) + (batch.skipped || 0) + (batch.failed || 0);
       const processedProgress = batch.total > 0 ? Math.round((processed / batch.total) * 100) : 0;
       
+      // 检测是否疑似卡死
+      const isStuck = batch.possiblyStuck || false;
+      const stuckWarning = isStuck ? \`
+        <div style="background: #fff3cd; padding: 8px; border-radius: 6px; margin-bottom: 10px; font-size: 0.8rem; color: #856404;">
+          ⚠️ 超过 \${batch.inactiveSeconds}秒 无响应，可能卡死
+        </div>
+      \` : '';
+      
+      // 显示当前处理的文件
+      const currentFileInfo = batch.currentFile ? \`
+        <div style="font-size: 0.75rem; color: #999; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          正在处理: \${batch.currentFile}
+        </div>
+      \` : '';
+      
       return \`
-        <div style="padding: 15px; border-bottom: 1px solid #eee;">
+        <div style="padding: 15px; border-bottom: 1px solid #eee; \${isStuck ? 'background: #fff9e6;' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="font-weight: 600; color: #333; font-size: 0.9rem;">
               批次 #\${batch.batchId.split('_')[1]} (\${batch.total} 张)
             </div>
-            <div style="color: #666; font-size: 0.85rem;">
-              \${minutes}:\${seconds.toString().padStart(2, '0')}
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="color: #666; font-size: 0.85rem;">
+                \${minutes}:\${seconds.toString().padStart(2, '0')}
+              </span>
+              <button onclick="cancelBatch('\${batch.batchId}')" style="background: #e74c3c; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 500;">
+                取消
+              </button>
             </div>
           </div>
+          
+          \${stuckWarning}
           
           <div style="margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666; margin-bottom: 5px;">
@@ -1323,8 +1345,35 @@ export function buildAdminDashboard() {
               </span>
             \` : ''}
           </div>
+          
+          \${currentFileInfo}
         </div>
       \`;
+    }
+    
+    async function cancelBatch(batchId) {
+      if (!confirm('确定要取消这个批次吗？已处理的图片不会受影响。')) {
+        return;
+      }
+      
+      try {
+        const result = await apiRequest('/api/admin/batch-cancel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batchId })
+        });
+        
+        if (result && result.success) {
+          alert('✅ 批次已取消');
+          // 立即更新进度面板
+          updateProgressPanel();
+        } else {
+          alert('❌ 取消失败: ' + (result?.error || '未知错误'));
+        }
+      } catch (error) {
+        console.error('Cancel batch error:', error);
+        alert('❌ 取消失败: ' + error.message);
+      }
     }
     
     function toggleProgressPanel() {
