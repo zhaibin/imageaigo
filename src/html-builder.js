@@ -19,6 +19,10 @@ export function buildMainHTML() {
     <meta name="keywords" content="AI image analysis, image tagging, photo organization, AI vision, image recognition, automatic tagging">
     <meta name="author" content="ImageAI Go">
     
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="alternate icon" href="/favicon.ico">
+    
     <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://imageaigo.cc/">
@@ -48,7 +52,24 @@ export function buildMainHTML() {
 <body itemscope itemtype="https://schema.org/WebPage">
     <div class="container">
         <header role="banner">
-            <h1 itemprop="name">🎨 ImageAI Go</h1>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
+                <svg width="48" height="48" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <defs>
+                    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style="stop-color:#fff;stop-opacity:0.9" />
+                      <stop offset="100%" style="stop-color:#fff;stop-opacity:0.7" />
+                    </linearGradient>
+                  </defs>
+                  <rect x="14" y="20" width="36" height="28" rx="4" fill="url(#logoGrad)"/>
+                  <rect x="18" y="24" width="28" height="20" rx="2" fill="white" opacity="0.5"/>
+                  <circle cx="32" cy="34" r="8" fill="white" opacity="0.3"/>
+                  <circle cx="32" cy="34" r="5" fill="white" opacity="0.6"/>
+                  <path d="M44 18 L46 20 L44 22 L42 20 Z" fill="white"/>
+                  <path d="M48 22 L49 23 L48 24 L47 23 Z" fill="white"/>
+                  <path d="M44 26 L45 27 L44 28 L43 27 Z" fill="white"/>
+                </svg>
+                <h1 itemprop="name" style="margin: 0;">ImageAI Go</h1>
+            </div>
             <p class="tagline" itemprop="description">AI-Powered Image Analysis & Intelligent Tagging</p>
             <div class="header-search">
                 <form action="/search" method="GET" style="max-width: 600px; margin: 20px auto;">
@@ -328,12 +349,39 @@ function getClientScript() {
         }
     }
 
-    async function loadImages(category = null) {
+    // 无限滚动状态
+    let currentPage = 1;
+    let isLoading = false;
+    let hasMore = true;
+    let currentCategory = null;
+    
+    // 根据设备类型确定每页加载数量
+    function getPageSize() {
+        const width = window.innerWidth;
+        if (width < 768) return 10;  // 移动设备
+        if (width < 1024) return 20; // 平板
+        return 30; // 桌面
+    }
+
+    async function loadImages(category = null, reset = false) {
+        if (isLoading || (!hasMore && !reset)) return;
+        
         try {
-            let url = '/api/images?limit=50';
+            isLoading = true;
+            
+            // 如果category变化或reset，重置状态
+            if (reset || category !== currentCategory) {
+                currentPage = 1;
+                hasMore = true;
+                currentCategory = category;
+                if (gallery) gallery.innerHTML = '';
+            }
+            
+            const pageSize = getPageSize();
+            let url = \`/api/images?page=\${currentPage}&limit=\${pageSize}\`;
             if (category) url += '&category=' + encodeURIComponent(category);
 
-            console.log('[LoadImages] Fetching:', url);
+            console.log(\`[LoadImages] Fetching page \${currentPage}:\`, url);
             const response = await fetch(url);
             if (!response.ok) throw new Error(\`HTTP \${response.status}\`);
             
@@ -341,10 +389,10 @@ function getClientScript() {
             console.log('[LoadImages] Received:', data.images?.length || 0, 'images');
 
             if (!gallery) return;
-            gallery.innerHTML = '';
             
-            if (!data.images || data.images.length === 0) {
+            if (currentPage === 1 && (!data.images || data.images.length === 0)) {
                 gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px;">No images yet. Upload your first image to get started!</div>';
+                hasMore = false;
                 return;
             }
             
@@ -353,59 +401,45 @@ function getClientScript() {
             
             data.images.forEach((image, index) => {
                 try {
-                    const card = createImageCard(image);
+                    const card = createImageCard(image, true); // 启用懒加载
                     fragment.appendChild(card);
                 } catch (err) {
                     console.error(\`Failed to create card \${index}:\`, err);
                 }
             });
             
-            // 一次性添加所有卡片
+            // 添加卡片到gallery
             gallery.appendChild(fragment);
             
-            // 等待所有图片加载完成，确保瀑布流布局正确
-            const imgs = gallery.querySelectorAll('img');
-            let loadedCount = 0;
-            const totalImages = imgs.length;
+            // 更新状态
+            hasMore = data.hasMore || false;
+            currentPage++;
             
-            const checkAllLoaded = () => {
-                loadedCount++;
-                if (loadedCount >= totalImages) {
-                    console.log('[LoadImages] All images loaded, layout complete');
-                    // 触发一次布局刷新
-                    gallery.style.columnGap = '20px';
-                }
-            };
-            
-            imgs.forEach(img => {
-                if (img.complete) {
-                    checkAllLoaded();
-                } else {
-                    img.addEventListener('load', checkAllLoaded);
-                    img.addEventListener('error', checkAllLoaded);
-                }
-            });
-            
-            // 备用：如果3秒后还没全部加载完，也触发刷新
-            setTimeout(() => {
-                if (loadedCount < totalImages) {
-                    console.log('[LoadImages] Timeout, forcing layout refresh');
-                    gallery.style.columnGap = '20px';
-                }
-            }, 3000);
-            
-            console.log('[LoadImages] Gallery updated with', data.images.length, 'cards');
+            console.log(\`[LoadImages] Page loaded. HasMore: \${hasMore}, NextPage: \${currentPage}\`);
         } catch (error) {
             console.error('[LoadImages] Error:', error);
-            if (gallery) gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px;">Error loading images. Please refresh.</div>';
+            if (currentPage === 1 && gallery) {
+                gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px;">Error loading images. Please refresh.</div>';
+            }
+        } finally {
+            isLoading = false;
         }
     }
 
-    function createImageCard(image) {
+    function createImageCard(image, lazyLoad = false) {
         const card = document.createElement('div');
         card.className = 'image-card';
 
         const img = document.createElement('img');
+        
+        // 懒加载优化
+        if (lazyLoad) {
+            img.loading = 'lazy';
+            img.decoding = 'async';
+            // 添加占位符，防止布局抖动
+            img.style.backgroundColor = '#f0f0f0';
+        }
+        
         img.src = image.image_url;
         img.alt = image.description || 'Image';
         
@@ -556,10 +590,38 @@ function getClientScript() {
         };
     }
 
+    // 无限滚动监听
+    let scrollTimeout;
+    window.addEventListener('scroll', () => {
+        if (scrollTimeout) clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+            const scrollHeight = document.documentElement.scrollHeight;
+            const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+            const clientHeight = document.documentElement.clientHeight;
+            
+            // 距离底部300px时加载更多
+            if (scrollTop + clientHeight >= scrollHeight - 300) {
+                if (!isLoading && hasMore) {
+                    console.log('[InfiniteScroll] Loading more images...');
+                    loadImages(currentCategory);
+                }
+            }
+        }, 100);
+    });
+    
+    // 窗口大小改变时重新计算
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        if (resizeTimeout) clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            console.log('[Resize] Window resized, page size:', getPageSize());
+        }, 500);
+    });
+
     console.log('[Init] Loading images and categories...');
-    loadImages();
+    loadImages(null, true); // 初始加载，reset=true
     loadCategories();
-    console.log('[Init] Setup complete');
+    console.log('[Init] Setup complete, infinite scroll enabled');
 </script>`;
 }
 
@@ -646,6 +708,14 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         console.error('Like error:', error);
       }
     }
+    
+    // 图片懒加载 - 为所有图片添加loading="lazy"
+    document.querySelectorAll('.gallery img').forEach(img => {
+      if (!img.hasAttribute('loading')) {
+        img.loading = 'lazy';
+        img.decoding = 'async';
+      }
+    });
   </script>
 </body>
 </html>`;

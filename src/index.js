@@ -89,6 +89,16 @@ export default {
         });
       }
 
+      // Static files (favicon, logo, etc.)
+      if (path === '/favicon.svg' || path === '/favicon.ico') {
+        return new Response(getFaviconSVG(), {
+          headers: {
+            'Content-Type': 'image/svg+xml',
+            'Cache-Control': 'public, max-age=31536000'
+          }
+        });
+      }
+
       // R2 images
       if (path.startsWith('/r2/')) {
         return await handleR2Image(request, env, path);
@@ -1127,7 +1137,7 @@ async function handleImageDetailPage(request, env, imageSlug) {
     
     <div class="detail-container">
       <div class="image-section">
-        <img src="${image.image_url}" alt="${escapeHtml(image.description)}" ${image.width && image.height ? `style="aspect-ratio: ${image.width} / ${image.height}"` : ''}>
+        <img src="${image.image_url}" alt="${escapeHtml(image.description)}" loading="lazy" decoding="async" ${image.width && image.height ? `style="aspect-ratio: ${image.width} / ${image.height}"` : ''}>
       </div>
       
       <div class="info-section">
@@ -1573,6 +1583,26 @@ async function getImageTags(db, imageId) {
 
 // 使用 utils 中的 generateHash
 const generateHash = utilsGenerateHash;
+
+// Favicon SVG
+function getFaviconSVG() {
+  return `<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="32" fill="url(#grad1)"/>
+  <rect x="14" y="20" width="36" height="28" rx="4" fill="white" opacity="0.9"/>
+  <rect x="18" y="24" width="28" height="20" rx="2" fill="url(#grad1)"/>
+  <circle cx="32" cy="34" r="8" fill="white" opacity="0.3"/>
+  <circle cx="32" cy="34" r="5" fill="white" opacity="0.6"/>
+  <path d="M44 18 L46 20 L44 22 L42 20 Z" fill="white"/>
+  <path d="M48 22 L49 23 L48 24 L47 23 Z" fill="white"/>
+  <path d="M44 26 L45 27 L44 28 L43 27 Z" fill="white"/>
+</svg>`;}
+
 
 function arrayBufferToBase64(buffer) {
   let binary = '';
