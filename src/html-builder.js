@@ -436,7 +436,15 @@ function getClientScript() {
         columnWidth = config.columnWidth;
         columnGap = config.gap;
         columnHeights = new Array(columnCount).fill(0);
+        
+        // 计算总宽度验证
+        const totalWidth = columnCount * columnWidth + (columnCount - 1) * columnGap;
+        const containerWidth = gallery?.offsetWidth || 0;
+        
         console.log('[Masonry] Init:', config);
+        console.log('[Masonry] Container width:', containerWidth);
+        console.log('[Masonry] Calculated total width:', totalWidth);
+        console.log('[Masonry] Overflow:', totalWidth > containerWidth ? 'YES ⚠️' : 'NO ✓');
     }
     
     // 获取最短的列
@@ -461,6 +469,20 @@ function getClientScript() {
         card.style.left = left + 'px';
         card.style.top = top + 'px';
         card.style.width = columnWidth + 'px';
+        
+        // 调试：检查是否超出
+        const cardRight = left + columnWidth;
+        const containerWidth = gallery?.offsetWidth || 0;
+        if (cardRight > containerWidth) {
+            console.warn('[Masonry] Card overflow!', {
+                columnIndex,
+                left,
+                cardWidth: columnWidth,
+                cardRight,
+                containerWidth,
+                overflow: cardRight - containerWidth
+            });
+        }
         
         // 更新该列的高度（需要等图片加载后才能获取准确高度）
         const updateHeight = () => {
