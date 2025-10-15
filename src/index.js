@@ -1,6 +1,6 @@
 import { analyzeImage, getImageDimensions } from './analyzer';
 import { getRecommendations } from './recommendations';
-import { handleCORS } from './utils';
+import { handleCORS, generateHash as utilsGenerateHash } from './utils';
 import { buildMainHTML, buildLegalPage, buildPageTemplate } from './html-builder';
 import { PRIVACY_CONTENT, TERMS_CONTENT, ABOUT_CONTENT } from './pages';
 import { escapeHtml } from './templates';
@@ -1512,11 +1512,8 @@ async function getImageTags(db, imageId) {
   };
 }
 
-async function generateHash(arrayBuffer) {
-  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
+// 使用 utils 中的 generateHash
+const generateHash = utilsGenerateHash;
 
 function arrayBufferToBase64(buffer) {
   let binary = '';

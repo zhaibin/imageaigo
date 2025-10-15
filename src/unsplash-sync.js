@@ -109,6 +109,12 @@ async function processUnsplashPhoto(photo, env) {
     
     // 生成哈希
     const imageHash = await generateHash(imageData);
+    console.log(`[UnsplashSync] Generated hash for ${photo.id}: ${typeof imageHash}, length: ${imageHash?.length}`);
+    
+    // 确保 imageHash 是字符串
+    if (typeof imageHash !== 'string' || !imageHash) {
+      throw new Error(`Invalid image hash: ${typeof imageHash}`);
+    }
     
     // 检查是否已存在
     const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?')
@@ -122,7 +128,8 @@ async function processUnsplashPhoto(photo, env) {
     // 上传到 R2
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 8);
-    const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
+    const hashPrefix = imageHash.substring(0, 12);
+    const r2Key = `images/${timestamp}-${randomStr}-${hashPrefix}.jpg`;
     
     await env.R2.put(r2Key, imageData, {
       httpMetadata: { 
