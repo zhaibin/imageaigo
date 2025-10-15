@@ -375,6 +375,7 @@ function getClientScript() {
     let columnCount = 0;
     let columnWidth = 0;
     let columnGap = 20;
+    let cardPositions = new Map(); // 存储每个卡片的列索引和顶部位置
     
     // 根据设备类型和容器实际宽度确定列数和列宽
     function getMasonryConfig() {
@@ -470,19 +471,8 @@ function getClientScript() {
         card.style.top = top + 'px';
         card.style.width = columnWidth + 'px';
         
-        // 调试：检查是否超出
-        const cardRight = left + columnWidth;
-        const containerWidth = gallery?.offsetWidth || 0;
-        if (cardRight > containerWidth) {
-            console.warn('[Masonry] Card overflow!', {
-                columnIndex,
-                left,
-                cardWidth: columnWidth,
-                cardRight,
-                containerWidth,
-                overflow: cardRight - containerWidth
-            });
-        }
+        // 存储卡片位置信息
+        cardPositions.set(card, { columnIndex, top });
         
         // 获取图片信息用于预估高度
         const img = card.querySelector('img');
@@ -504,9 +494,10 @@ function getClientScript() {
         
         // 加上内容区域的估计高度（描述+标签+padding）
         const contentPadding = 40; // 上下padding各20px
-        const descriptionHeight = 60; // 估计3行文字高度
-        const tagsHeight = 30; // 估计标签高度
-        estimatedHeight += contentPadding + descriptionHeight + tagsHeight;
+        const descriptionHeight = 80; // 估计3行文字高度（增加到80px更安全）
+        const tagsHeight = 40; // 估计标签高度（增加到40px）
+        const likeButtonHeight = 25; // 点赞按钮占用的额外空间
+        estimatedHeight += contentPadding + descriptionHeight + tagsHeight + likeButtonHeight;
         
         // 立即使用预估高度更新列高度，避免卡片重叠
         columnHeights[columnIndex] = top + estimatedHeight + columnGap;
@@ -515,9 +506,33 @@ function getClientScript() {
         // 图片加载完成后更新为实际高度
         const updateActualHeight = () => {
             const actualHeight = card.offsetHeight;
-            // 重新计算该列高度（使用实际高度）
-            columnHeights[columnIndex] = top + actualHeight + columnGap;
-            updateGalleryHeight();
+            const position = cardPositions.get(card);
+            
+            if (position) {
+                const { columnIndex: col, top: cardTop } = position;
+                
+                // 计算高度差异
+                const heightDiff = actualHeight - estimatedHeight;
+                
+                // 更新该列的实际高度
+                const currentColumnHeight = columnHeights[col];
+                const newColumnHeight = cardTop + actualHeight + columnGap;
+                
+                // 只有当实际高度大于预估高度时才需要调整
+                if (heightDiff > 10 && newColumnHeight > currentColumnHeight) {
+                    // 更新该列高度
+                    columnHeights[col] = newColumnHeight;
+                    
+                    // 调整该列后续的所有卡片位置
+                    adjustCardsBelow(col, cardTop, heightDiff);
+                    
+                    updateGalleryHeight();
+                } else if (heightDiff < -10) {
+                    // 实际高度小于预估，只更新列高度，不需要调整卡片位置
+                    columnHeights[col] = Math.max(currentColumnHeight, newColumnHeight);
+                    updateGalleryHeight();
+                }
+            }
         };
         
         // 等待图片加载
@@ -529,8 +544,20 @@ function getClientScript() {
                 img.addEventListener('error', updateActualHeight);
             }
         } else {
-            updateActualHeight();
+            setTimeout(updateActualHeight, 100);
         }
+    }
+    
+    // 调整某列中某个位置之后的所有卡片
+    function adjustCardsBelow(columnIndex, topThreshold, heightDiff) {
+        cardPositions.forEach((position, card) => {
+            if (position.columnIndex === columnIndex && position.top > topThreshold) {
+                const currentTop = parseInt(card.style.top) || position.top;
+                const newTop = currentTop + heightDiff;
+                card.style.top = newTop + 'px';
+                position.top = newTop;
+            }
+        });
     }
     
     // 更新gallery的总高度
