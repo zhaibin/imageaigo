@@ -745,49 +745,98 @@ async function handleUnlike(request, env) {
 }
 
 async function handleCleanup(request, env) {
+  // 使用管理员 Token 认证，而不是 secret
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
   try {
-    const { action, secret } = await request.json();
+    const { action } = await request.json();
     
-    // 简单的安全验证
-    if (secret !== 'cleanup-imageaigo-2024') {
-      return new Response(JSON.stringify({ error: 'Invalid secret' }), {
-        status: 403,
+    if (!action || !['r2', 'cache', 'all', 'database'].includes(action)) {
+      return new Response(JSON.stringify({ error: 'Invalid action' }), {
+        status: 400,
         headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
       });
     }
     
-    const results = { r2: 0, cache: 0 };
+    const results = { r2: 0, cache: 0, database: 0 };
+    
+    console.log(`[Cleanup] Starting cleanup action: ${action}`);
     
     // 清空 R2
     if (action === 'r2' || action === 'all') {
-      const listed = await env.R2.list({ prefix: 'images/' });
-      const keys = listed.objects.map(obj => obj.key);
-      
-      if (keys.length > 0) {
-        await Promise.all(keys.map(key => env.R2.delete(key)));
-        results.r2 = keys.length;
+      try {
+        const listed = await env.R2.list({ prefix: 'images/' });
+        const keys = listed.objects.map(obj => obj.key);
+        
+        if (keys.length > 0) {
+          // 批量删除，每次最多 1000 个
+          for (let i = 0; i < keys.length; i += 1000) {
+            const batch = keys.slice(i, i + 1000);
+            await Promise.all(batch.map(key => env.R2.delete(key)));
+          }
+          results.r2 = keys.length;
+          console.log(`[Cleanup] Deleted ${keys.length} R2 objects`);
+        }
+      } catch (error) {
+        console.error('[Cleanup] R2 cleanup failed:', error);
+        throw new Error(`R2 cleanup failed: ${error.message}`);
       }
     }
     
     // 清空 KV 缓存
     if (action === 'cache' || action === 'all') {
-      const list = await env.CACHE.list();
-      if (list.keys.length > 0) {
-        await Promise.all(list.keys.map(key => env.CACHE.delete(key.name)));
-        results.cache = list.keys.length;
+      try {
+        const list = await env.CACHE.list();
+        if (list.keys.length > 0) {
+          await Promise.all(list.keys.map(key => env.CACHE.delete(key.name)));
+          results.cache = list.keys.length;
+          console.log(`[Cleanup] Deleted ${list.keys.length} cache keys`);
+        }
+      } catch (error) {
+        console.error('[Cleanup] Cache cleanup failed:', error);
+        throw new Error(`Cache cleanup failed: ${error.message}`);
+      }
+    }
+    
+    // 清空数据库
+    if (action === 'database' || action === 'all') {
+      try {
+        // 删除所有表数据（保留表结构）
+        await env.DB.prepare('DELETE FROM likes').run();
+        await env.DB.prepare('DELETE FROM image_tags').run();
+        await env.DB.prepare('DELETE FROM images').run();
+        await env.DB.prepare('DELETE FROM tags').run();
+        
+        // 重置自增ID
+        await env.DB.prepare('DELETE FROM sqlite_sequence').run();
+        
+        const { total } = await env.DB.prepare('SELECT COUNT(*) as total FROM images').first();
+        results.database = total === 0 ? 'cleared' : 'failed';
+        console.log(`[Cleanup] Database cleared`);
+      } catch (error) {
+        console.error('[Cleanup] Database cleanup failed:', error);
+        throw new Error(`Database cleanup failed: ${error.message}`);
       }
     }
     
     return new Response(JSON.stringify({ 
       success: true, 
-      message: 'Cleanup completed',
+      message: 'Cleanup completed successfully',
       deleted: results
     }), {
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
     });
   } catch (error) {
     console.error('[Cleanup] Error:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
       status: 500,
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
     });

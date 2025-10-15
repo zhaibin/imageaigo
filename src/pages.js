@@ -219,7 +219,7 @@ export const ABOUT_CONTENT = `
 <ul>
   <li><strong>Website</strong>: imageaigo.cc</li>
   <li><strong>Email</strong>: support@imageaigo.cc</li>
-  <li><strong>GitHub</strong>: github.com/imageaigo</li>
+  <li><strong>GitHub</strong>: github.com/zhaibin/imageaigo</li>
 </ul>
 
 <h2>🙏 Acknowledgments</h2>

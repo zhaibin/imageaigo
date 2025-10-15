@@ -599,8 +599,11 @@ export function buildAdminDashboard() {
             <button class="btn btn-danger" onclick="cleanupCache()">
               🧹 清空 KV 缓存
             </button>
+            <button class="btn btn-danger" onclick="cleanupDatabase()">
+              🗄️ 清空数据库
+            </button>
             <button class="btn btn-danger" onclick="cleanupAll()">
-              ⚠️ 清空所有数据（R2 + Cache）
+              ⚠️ 清空所有数据（R2 + Cache + Database）
             </button>
           </div>
           
@@ -913,8 +916,14 @@ export function buildAdminDashboard() {
       await performCleanup('cache');
     }
     
+    async function cleanupDatabase() {
+      if (!confirm('⚠️ 确定要清空数据库吗？此操作不可逆！')) return;
+      if (!confirm('最后确认：真的要删除所有数据库记录吗？')) return;
+      await performCleanup('database');
+    }
+    
     async function cleanupAll() {
-      if (!confirm('⚠️⚠️⚠️ 确定要清空所有数据吗？包括 R2 存储和缓存，此操作不可逆！')) return;
+      if (!confirm('⚠️⚠️⚠️ 确定要清空所有数据吗？包括 R2 存储、缓存和数据库，此操作不可逆！')) return;
       if (!confirm('最后确认：真的要删除所有数据吗？')) return;
       await performCleanup('all');
     }
@@ -926,20 +935,44 @@ export function buildAdminDashboard() {
       resultEl.style.background = '#fff3cd';
       resultEl.style.color = '#856404';
       
-      const token = localStorage.getItem('adminToken');
-      const result = await apiRequest('/api/cleanup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, secret: 'cleanup-imageaigo-2024' })
-      });
-      
-      if (result && result.success) {
-        resultEl.textContent = \`✅ 清理成功！删除了 R2: \${result.deleted.r2} 个文件，Cache: \${result.deleted.cache} 个键\`;
-        resultEl.style.background = '#d4edda';
-        resultEl.style.color = '#155724';
-        loadStats();
-      } else {
-        resultEl.textContent = '❌ 清理失败: ' + (result?.error || '未知错误');
+      try {
+        const result = await apiRequest('/api/cleanup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action })
+        });
+        
+        if (result && result.success) {
+          let message = '✅ 清理成功！';
+          if (result.deleted.r2 > 0) {
+            message += \` R2: \${result.deleted.r2} 个文件\`;
+          }
+          if (result.deleted.cache > 0) {
+            message += \` | Cache: \${result.deleted.cache} 个键\`;
+          }
+          if (result.deleted.database) {
+            message += \` | Database: \${result.deleted.database}\`;
+          }
+          
+          resultEl.textContent = message;
+          resultEl.style.background = '#d4edda';
+          resultEl.style.color = '#155724';
+          
+          // 刷新统计数据
+          loadStats();
+          
+          // 如果清理了数据库，刷新图片列表
+          if (action === 'database' || action === 'all') {
+            loadImages(1);
+          }
+        } else {
+          resultEl.textContent = '❌ 清理失败: ' + (result?.error || '未知错误');
+          resultEl.style.background = '#f8d7da';
+          resultEl.style.color = '#721c24';
+        }
+      } catch (error) {
+        console.error('Cleanup error:', error);
+        resultEl.textContent = '❌ 清理失败: ' + error.message;
         resultEl.style.background = '#f8d7da';
         resultEl.style.color = '#721c24';
       }
