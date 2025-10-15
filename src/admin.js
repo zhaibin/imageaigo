@@ -963,22 +963,24 @@ export function buildAdminDashboard() {
         
         if (result && result.success) {
           resultEl.innerHTML = \`
-            <strong>✅ 同步成功！</strong><br>
+            <strong>✅ 同步启动成功！</strong><br>
             <div style="margin-top: 10px; line-height: 1.8;">
-              • 处理: \${result.processed || 0} 张<br>
+              • 已入队: \${result.queued || 0} 张<br>
               • 跳过: \${result.skipped || 0} 张（重复）<br>
               • 失败: \${result.failed || 0} 张<br>
-              • 总计: \${result.total || 0} 张
+              • 总计: \${result.total || 0} 张<br>
+              <br>
+              💡 图片正在队列中后台处理，请稍后刷新查看
             </div>
           \`;
           resultEl.style.background = '#d4edda';
           resultEl.style.color = '#155724';
           
-          // 刷新统计和图片列表
+          // 5秒后刷新统计和图片列表
           setTimeout(() => {
             loadStats();
             loadImages(1);
-          }, 1000);
+          }, 5000);
         } else {
           resultEl.textContent = '❌ 同步失败: ' + (result?.error || '未知错误');
           resultEl.style.background = '#f8d7da';
