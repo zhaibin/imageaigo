@@ -4,31 +4,48 @@
 
 ### 🐛 Bug 修复
 
-#### Unsplash 同步导入错误
-- **问题**：使用了动态 `import()` 导致同步失败
-- **原因**：Cloudflare Workers 不完全支持动态导入
-- **解决**：改为静态导入（文件顶部）
-- **影响**：修复前 Unsplash 同步全部失败
-- **修复后**：Unsplash 同步功能正常工作
+#### Unsplash 同步错误（完整修复）
+
+**问题1：动态导入错误**
+- 使用了动态 `import()` 导致同步失败
+- Cloudflare Workers 不完全支持动态导入
+- ✅ 已修复：改为静态导入
+
+**问题2：imageHash.substring 错误**（根本原因）
+- **错误信息**：`TypeError: imageHash.substring is not a function`
+- **根本原因**：发现有两个 `generateHash` 函数定义
+  - `src/utils.js` (export) - 正确版本
+  - `src/index.js` (local) - 重复定义
+- **导致**：导入冲突，类型不一致
+- **解决方案**：
+  1. 统一使用 `utils.js` 中的 `generateHash`
+  2. `src/index.js` 导入并使用 utils 版本
+  3. 删除本地重复定义
+  4. 添加类型检查和调试日志
 
 **修改内容：**
 ```javascript
-// 之前（错误）
-async function processPhoto() {
-  const { analyzeImage } = await import('./analyzer.js');
-  ...
-}
+// src/index.js
+// 之前：本地定义（重复）
+async function generateHash(arrayBuffer) { ... }
 
-// 现在（正确）
-import { analyzeImage } from './analyzer.js';
-async function processPhoto() {
-  await analyzeImage(...);
-  ...
+// 现在：导入统一版本
+import { generateHash as utilsGenerateHash } from './utils';
+const generateHash = utilsGenerateHash;
+
+// src/unsplash-sync.js
+// 添加类型检查
+const imageHash = await generateHash(imageData);
+console.log(`Generated hash: ${typeof imageHash}, length: ${imageHash?.length}`);
+
+if (typeof imageHash !== 'string' || !imageHash) {
+  throw new Error(`Invalid image hash: ${typeof imageHash}`);
 }
 ```
 
 ### 📝 文件修改
-- `src/unsplash-sync.js` - 修复导入语句
+- `src/unsplash-sync.js` - 修复导入语句、添加类型检查
+- `src/index.js` - 统一使用 utils.generateHash
 
 ---
 
