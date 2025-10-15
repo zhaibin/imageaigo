@@ -35,10 +35,10 @@ export async function handleQueue(batch, env) {
 // 处理单个队列消息
 async function processQueueMessage(message, env) {
   const startTime = Date.now();
-  const { batchId, fileIndex, fileName, imageHash } = message.body;
+  const { batchId, fileIndex, fileName, imageHash, sourceType } = message.body;
   
   try {
-    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Processing ${fileName}`);
+    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Processing ${fileName} (source: ${sourceType || 'upload'})`);
     
     // 检查批次是否已取消
     const batchStatus = await getBatchStatus(env, batchId);
@@ -51,8 +51,13 @@ async function processQueueMessage(message, env) {
     // 更新状态：正在处理
     await updateBatchStatus(env, batchId, fileIndex, 'processing', null, fileName);
     
-    // 从 R2 获取临时图片数据（超时保护）
-    const tempKey = `temp/${batchId}/${fileIndex}`;
+    // 从 R2 获取临时图片数据（根据来源类型构建路径）
+    const tempKey = sourceType === 'unsplash' 
+      ? `temp/unsplash/${batchId}/${fileIndex}`
+      : `temp/${batchId}/${fileIndex}`;
+    
+    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Fetching from R2: ${tempKey}`);
+    
     const r2Object = await Promise.race([
       env.R2.get(tempKey),
       new Promise((_, reject) => 
@@ -150,9 +155,11 @@ async function processQueueMessage(message, env) {
     // 更新状态：失败
     await updateBatchStatus(env, batchId, fileIndex, 'failed', error.message);
     
-    // 清理临时文件
+    // 清理临时文件（根据来源类型构建路径）
     try {
-      const tempKey = `temp/${batchId}/${fileIndex}`;
+      const tempKey = sourceType === 'unsplash' 
+        ? `temp/unsplash/${batchId}/${fileIndex}`
+        : `temp/${batchId}/${fileIndex}`;
       await env.R2.delete(tempKey);
     } catch (cleanupErr) {
       console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Cleanup failed:`, cleanupErr.message);
