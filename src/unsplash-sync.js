@@ -35,6 +35,25 @@ export async function handleUnsplashSync(env) {
     // 生成同步批次ID
     const syncBatchId = `unsplash_${Date.now()}`;
     
+    // 初始化批次状态到 KV（重要！队列消费者需要）
+    const batchStatus = {
+      batchId: syncBatchId,
+      total: photos.length,
+      completed: 0,
+      failed: 0,
+      skipped: 0,
+      processing: 0,
+      status: 'processing',
+      startTime: Date.now(),
+      lastActivity: Date.now(),
+      currentFile: '',
+      sourceType: 'unsplash',
+      files: photos.map(p => ({ name: `unsplash-${p.id}.jpg`, status: 'pending' }))
+    };
+    
+    await env.CACHE.put(`batch:${syncBatchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+    console.log(`[UnsplashSync] Batch status initialized: ${syncBatchId}`);
+    
     let queued = 0;
     let skipped = 0;
     let failed = 0;
@@ -57,6 +76,7 @@ export async function handleUnsplashSync(env) {
           
           // 检查大小
           if (imageData.byteLength > 20 * 1024 * 1024) {
+            await updateBatchFileStatus(env, syncBatchId, index, 'failed', 'Too large');
             return { status: 'skipped', reason: 'Too large' };
           }
           
@@ -69,6 +89,7 @@ export async function handleUnsplashSync(env) {
           
           if (existing) {
             console.log(`[UnsplashSync:${index}] Duplicate: ${existing.slug}`);
+            await updateBatchFileStatus(env, syncBatchId, index, 'skipped', `Duplicate: ${existing.slug}`);
             return { status: 'skipped', reason: 'Duplicate' };
           }
           
@@ -97,10 +118,11 @@ export async function handleUnsplashSync(env) {
           });
           
           console.log(`[UnsplashSync:${index}] Queued: ${photo.id}`);
-          return { status: 'queued' };
+          return { status: 'queued', index };
           
         } catch (error) {
           console.error(`[UnsplashSync] Preprocessing failed for ${photo.id}:`, error.message);
+          await updateBatchFileStatus(env, syncBatchId, index, 'failed', error.message);
           return { status: 'failed', error: error.message };
         }
       })
@@ -123,12 +145,22 @@ export async function handleUnsplashSync(env) {
     
     console.log(`[UnsplashSync] Preprocessing completed: ${queued} queued, ${skipped} skipped, ${failed} failed`);
     
+    // 更新批次状态中的实际计数
+    const statusKey = `batch:${syncBatchId}`;
+    const currentStatus = await env.CACHE.get(statusKey);
+    if (currentStatus) {
+      const batchData = JSON.parse(currentStatus);
+      batchData.total = photos.length;
+      await env.CACHE.put(statusKey, JSON.stringify(batchData), { expirationTtl: 3600 });
+    }
+    
     return {
       success: true,
       queued,
       skipped,
       failed,
       total: photos.length,
+      batchId: syncBatchId,
       message: `${queued} photos queued for processing, ${skipped} skipped (duplicates)`
     };
     
@@ -141,3 +173,31 @@ export async function handleUnsplashSync(env) {
   }
 }
 
+// 更新批次文件状态
+async function updateBatchFileStatus(env, batchId, fileIndex, status, error = null) {
+  try {
+    const statusKey = `batch:${batchId}`;
+    const currentStatus = await env.CACHE.get(statusKey);
+    
+    if (!currentStatus) return;
+    
+    const batchStatus = JSON.parse(currentStatus);
+    if (batchStatus.files[fileIndex]) {
+      batchStatus.files[fileIndex].status = status;
+      if (error) {
+        batchStatus.files[fileIndex].error = error;
+      }
+    }
+    
+    // 更新计数
+    batchStatus.completed = batchStatus.files.filter(f => f.status === 'completed').length;
+    batchStatus.failed = batchStatus.files.filter(f => f.status === 'failed').length;
+    batchStatus.skipped = batchStatus.files.filter(f => f.status === 'skipped').length;
+    batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
+    batchStatus.lastActivity = Date.now();
+    
+    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+  } catch (err) {
+    console.error('[UpdateBatchFileStatus] Error:', err);
+  }
+}

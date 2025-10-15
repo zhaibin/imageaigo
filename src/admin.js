@@ -1358,11 +1358,16 @@ export function buildAdminDashboard() {
         </div>
       \` : '';
       
+      // 判断批次类型
+      const isUnsplash = batch.sourceType === 'unsplash' || batch.batchId.startsWith('unsplash_');
+      const batchTypeIcon = isUnsplash ? '🌐' : '📤';
+      const batchTypeName = isUnsplash ? 'Unsplash' : '批次';
+      
       return \`
         <div style="padding: 15px; border-bottom: 1px solid #eee; \${isStuck ? 'background: #fff9e6;' : ''}">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="font-weight: 600; color: #333; font-size: 0.9rem;">
-              批次 #\${batch.batchId.split('_')[1]} (\${batch.total} 张)
+              \${batchTypeIcon} \${batchTypeName} #\${batch.batchId.split('_')[1]} (\${batch.total} 张)
             </div>
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="color: #666; font-size: 0.85rem;">
