@@ -1918,13 +1918,6 @@ async function handleAdminBatchUpload(request, env, ctx) {
       });
     }
     
-    if (files.length > 10) {
-      return new Response(JSON.stringify({ error: 'Maximum 10 files per batch' }), {
-        status: 400,
-        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
-      });
-    }
-    
     // 生成批次ID
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     console.log(`[BatchUpload] Received ${files.length} files, batchId: ${batchId}`);
@@ -1935,6 +1928,7 @@ async function handleAdminBatchUpload(request, env, ctx) {
       total: files.length,
       completed: 0,
       failed: 0,
+      skipped: 0,  // 重复跳过
       processing: 0,
       status: 'processing',
       startTime: Date.now(),
@@ -2026,9 +2020,35 @@ async function processBatchUpload(files, env, batchId) {
       // 获取图片尺寸
       const dimensions = await getImageDimensions(imageData);
       
-      // AI 分析
-      const analysis = await analyzeImage(imageData, env.AI);
-      analysis.dimensions = dimensions;
+      // AI 分析（带重试逻辑）
+      let analysis = null;
+      let lastError = null;
+      const maxRetries = 3;
+      
+      for (let retry = 0; retry < maxRetries; retry++) {
+        try {
+          if (retry > 0) {
+            console.log(`[BatchProcess:${batchId}] Retry ${retry}/${maxRetries} for ${file.name}`);
+            await new Promise(resolve => setTimeout(resolve, 2000 * retry)); // 递增延迟
+          }
+          
+          analysis = await analyzeImage(imageData, env.AI);
+          analysis.dimensions = dimensions;
+          break; // 成功则跳出重试循环
+        } catch (err) {
+          lastError = err;
+          console.warn(`[BatchProcess:${batchId}] AI analysis failed (attempt ${retry + 1}/${maxRetries}):`, err.message);
+          
+          if (retry === maxRetries - 1) {
+            // 最后一次重试失败
+            throw new Error(`AI analysis failed after ${maxRetries} retries: ${err.message}`);
+          }
+        }
+      }
+      
+      if (!analysis) {
+        throw new Error('AI analysis returned null');
+      }
       
       // 存储到数据库
       const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis);
@@ -2070,6 +2090,7 @@ async function updateBatchStatus(env, batchId, fileIndex, status, error = null) 
     // 更新计数
     batchStatus.completed = batchStatus.files.filter(f => f.status === 'completed').length;
     batchStatus.failed = batchStatus.files.filter(f => f.status === 'failed').length;
+    batchStatus.skipped = batchStatus.files.filter(f => f.status === 'skipped').length;
     batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
     
     await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });

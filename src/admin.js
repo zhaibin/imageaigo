@@ -650,10 +650,12 @@ export function buildAdminDashboard() {
         <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #856404;">
           <strong>提示：</strong>
           <ul style="margin: 10px 0 0 20px; line-height: 1.8;">
-            <li>一次最多上传 10 张图片</li>
+            <li>支持批量上传，无数量限制</li>
             <li>每张图片最大 20MB</li>
             <li>上传后会在后台异步分析</li>
-            <li>处理需要几分钟时间</li>
+            <li>重复图片会自动跳过</li>
+            <li>分析失败会自动重试3次</li>
+            <li>右上角可查看实时处理进度</li>
           </ul>
         </div>
         
@@ -1102,11 +1104,6 @@ export function buildAdminDashboard() {
           return;
         }
         
-        if (files.length > 10) {
-          alert('一次最多上传 10 张图片');
-          return;
-        }
-        
         // 模拟文件选择事件
         batchFiles = files;
         displayBatchFiles();
@@ -1132,11 +1129,6 @@ export function buildAdminDashboard() {
     
     function handleBatchFilesSelected(event) {
       const files = Array.from(event.target.files);
-      
-      if (files.length > 10) {
-        alert('一次最多上传 10 张图片');
-        return;
-      }
       
       batchFiles = files;
       displayBatchFiles();
@@ -1282,11 +1274,15 @@ export function buildAdminDashboard() {
       const minutes = Math.floor(elapsedTime / 60);
       const seconds = elapsedTime % 60;
       
+      // 计算已处理数量（成功 + 跳过 + 失败）
+      const processed = (batch.completed || 0) + (batch.skipped || 0) + (batch.failed || 0);
+      const processedProgress = batch.total > 0 ? Math.round((processed / batch.total) * 100) : 0;
+      
       return \`
         <div style="padding: 15px; border-bottom: 1px solid #eee;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="font-weight: 600; color: #333; font-size: 0.9rem;">
-              批次 #\${batch.batchId.split('_')[1]}
+              批次 #\${batch.batchId.split('_')[1]} (\${batch.total} 张)
             </div>
             <div style="color: #666; font-size: 0.85rem;">
               \${minutes}:\${seconds.toString().padStart(2, '0')}
@@ -1295,18 +1291,37 @@ export function buildAdminDashboard() {
           
           <div style="margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666; margin-bottom: 5px;">
-              <span>\${batch.completed} / \${batch.total}</span>
-              <span>\${progress}%</span>
+              <span>已处理 \${processed} / \${batch.total}</span>
+              <span>\${processedProgress}%</span>
             </div>
             <div style="width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden;">
-              <div style="width: \${progress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>
+              <div style="width: \${processedProgress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>
             </div>
           </div>
           
-          <div style="display: flex; gap: 15px; font-size: 0.8rem; color: #666;">
-            <span>✅ \${batch.completed}</span>
-            \${batch.failed > 0 ? \`<span style="color: #e74c3c;">❌ \${batch.failed}</span>\` : ''}
-            \${batch.processing > 0 ? \`<span style="color: #667eea;">⚙️ \${batch.processing}</span>\` : ''}
+          <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8rem; color: #666; line-height: 1.8;">
+            <span style="display: flex; align-items: center; gap: 4px;">
+              <span style="color: #28a745;">✅</span> 
+              <span>成功 \${batch.completed || 0}</span>
+            </span>
+            \${(batch.skipped || 0) > 0 ? \`
+              <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="color: #ffc107;">⏭️</span>
+                <span>重复 \${batch.skipped}</span>
+              </span>
+            \` : ''}
+            \${(batch.failed || 0) > 0 ? \`
+              <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="color: #e74c3c;">❌</span>
+                <span>失败 \${batch.failed}</span>
+              </span>
+            \` : ''}
+            \${(batch.processing || 0) > 0 ? \`
+              <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="color: #667eea;">⚙️</span>
+                <span>处理中 \${batch.processing}</span>
+              </span>
+            \` : ''}
           </div>
         </div>
       \`;
