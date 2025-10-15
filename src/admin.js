@@ -642,7 +642,7 @@ export function buildAdminDashboard() {
           </ul>
         </div>
         
-        <div style="border: 3px dashed #667eea; border-radius: 12px; padding: 40px; text-align: center; background: #f8f9ff; margin-bottom: 20px;">
+        <div id="batchDropZone" style="border: 3px dashed #667eea; border-radius: 12px; padding: 40px; text-align: center; background: #f8f9ff; margin-bottom: 20px; transition: all 0.3s;">
           <input type="file" id="batchFileInput" multiple accept="image/*" style="display: none;" onchange="handleBatchFilesSelected(event)">
           <button onclick="document.getElementById('batchFileInput').click()" style="background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;">
             选择图片
@@ -653,8 +653,14 @@ export function buildAdminDashboard() {
         <div id="batchFilesList" style="margin-bottom: 20px;"></div>
         
         <div id="batchUploadProgress" style="display: none; background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-          <div style="color: #667eea; font-weight: 600; margin-bottom: 10px;">上传中...</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="color: #667eea; font-weight: 600;">上传处理中...</div>
+            <button id="closeProgressBtn" onclick="closeUploadProgress()" style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; display: none;">
+              后台处理
+            </button>
+          </div>
           <div id="batchProgressText"></div>
+          <p style="color: #999; font-size: 0.85rem; margin-top: 10px;">💡 提示：可以关闭此窗口，图片会在后台继续处理</p>
         </div>
         
         <button id="uploadBatchBtn" onclick="uploadBatch()" disabled style="width: 100%; background: #667eea; color: white; border: none; padding: 15px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;">
@@ -1028,26 +1034,70 @@ export function buildAdminDashboard() {
     
     // 批量上传功能
     let batchFiles = [];
+    let isUploading = false;
     
     function showBatchUpload() {
       batchFiles = [];
+      isUploading = false;
       document.getElementById('batchFilesList').innerHTML = '';
       document.getElementById('uploadBatchBtn').disabled = true;
       document.getElementById('batchUploadProgress').style.display = 'none';
       document.getElementById('batchUploadModal').classList.add('show');
+      
+      // 设置拖拽事件
+      setupBatchDragDrop();
     }
     
-    function handleBatchFilesSelected(event) {
-      const files = Array.from(event.target.files);
+    function setupBatchDragDrop() {
+      const dropZone = document.getElementById('batchDropZone');
+      if (!dropZone) return;
       
-      if (files.length > 10) {
-        alert('一次最多上传 10 张图片');
-        return;
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+      });
+      
+      function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
       }
       
-      batchFiles = files;
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => {
+          dropZone.style.background = '#e8f0fe';
+          dropZone.style.borderColor = '#4285f4';
+          dropZone.style.transform = 'scale(1.02)';
+        });
+      });
       
-      const listHtml = files.map((file, index) => \`
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => {
+          dropZone.style.background = '#f8f9ff';
+          dropZone.style.borderColor = '#667eea';
+          dropZone.style.transform = 'scale(1)';
+        });
+      });
+      
+      dropZone.addEventListener('drop', (e) => {
+        const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+        
+        if (files.length === 0) {
+          alert('请拖拽图片文件');
+          return;
+        }
+        
+        if (files.length > 10) {
+          alert('一次最多上传 10 张图片');
+          return;
+        }
+        
+        // 模拟文件选择事件
+        batchFiles = files;
+        displayBatchFiles();
+      });
+    }
+    
+    function displayBatchFiles() {
+      const listHtml = batchFiles.map((file, index) => \`
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: white; border-radius: 6px; margin-bottom: 8px;">
           <div>
             <strong>\${file.name}</strong>
@@ -1060,27 +1110,42 @@ export function buildAdminDashboard() {
       \`).join('');
       
       document.getElementById('batchFilesList').innerHTML = listHtml;
-      document.getElementById('uploadBatchBtn').disabled = files.length === 0;
+      document.getElementById('uploadBatchBtn').disabled = batchFiles.length === 0;
+    }
+    
+    function handleBatchFilesSelected(event) {
+      const files = Array.from(event.target.files);
+      
+      if (files.length > 10) {
+        alert('一次最多上传 10 张图片');
+        return;
+      }
+      
+      batchFiles = files;
+      displayBatchFiles();
     }
     
     function removeBatchFile(index) {
       batchFiles.splice(index, 1);
-      const event = { target: { files: batchFiles } };
-      // 重新渲染列表
-      const listHtml = batchFiles.map((file, idx) => \`
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: white; border-radius: 6px; margin-bottom: 8px;">
-          <div>
-            <strong>\${file.name}</strong>
-            <span style="color: #666; margin-left: 10px;">\${(file.size / 1024 / 1024).toFixed(2)} MB</span>
-          </div>
-          <button onclick="removeBatchFile(\${idx})" style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">
-            删除
-          </button>
-        </div>
-      \`).join('');
+      displayBatchFiles();
+    }
+    
+    function closeUploadProgress() {
+      // 关闭模态框但不中断上传
+      closeModal('batchUploadModal');
+      isUploading = false;
       
-      document.getElementById('batchFilesList').innerHTML = listHtml;
-      document.getElementById('uploadBatchBtn').disabled = batchFiles.length === 0;
+      // 显示通知
+      const notification = document.createElement('div');
+      notification.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #667eea; color: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); z-index: 10000;';
+      notification.innerHTML = '✅ 图片正在后台处理中，请稍后刷新页面查看';
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transition = 'opacity 0.3s';
+        setTimeout(() => notification.remove(), 300);
+      }, 5000);
     }
     
     async function uploadBatch() {
@@ -1089,7 +1154,9 @@ export function buildAdminDashboard() {
       const progressEl = document.getElementById('batchUploadProgress');
       const progressText = document.getElementById('batchProgressText');
       const uploadBtn = document.getElementById('uploadBatchBtn');
+      const closeProgressBtn = document.getElementById('closeProgressBtn');
       
+      isUploading = true;
       progressEl.style.display = 'block';
       uploadBtn.disabled = true;
       
@@ -1099,7 +1166,14 @@ export function buildAdminDashboard() {
           formData.append(\`file_\${index}\`, file);
         });
         
-        progressText.textContent = \`正在上传 \${batchFiles.length} 张图片...\`;
+        progressText.innerHTML = \`
+          <div style="margin-bottom: 10px;">
+            正在上传 \${batchFiles.length} 张图片到服务器...
+          </div>
+          <div style="color: #666; font-size: 0.9rem;">
+            📤 准备上传文件
+          </div>
+        \`;
         
         const result = await apiRequest('/api/admin/batch-upload', {
           method: 'POST',
@@ -1108,26 +1182,33 @@ export function buildAdminDashboard() {
         
         if (result && result.success) {
           progressText.innerHTML = \`
-            <div style="color: #28a745; font-weight: 600;">✅ 上传成功！</div>
-            <div style="color: #666; margin-top: 10px;">
-              已提交 \${result.count} 张图片进行后台处理。<br>
-              请稍后刷新图片列表查看结果。
+            <div style="color: #28a745; font-weight: 600; margin-bottom: 10px;">✅ 上传成功！</div>
+            <div style="color: #666; line-height: 1.6;">
+              • 已提交 \${result.count} 张图片进行后台 AI 分析<br>
+              • 预计处理时间：2-5 分钟<br>
+              • 您可以关闭此窗口，处理会在后台继续<br>
+              • 完成后刷新页面即可查看新图片
             </div>
           \`;
           
-          // 3秒后关闭模态框并刷新列表
+          // 显示关闭按钮
+          closeProgressBtn.style.display = 'inline-block';
+          
+          // 10秒后自动关闭（给用户足够时间看到消息）
           setTimeout(() => {
-            closeModal('batchUploadModal');
-            loadImages(1);
-            loadStats();
-          }, 3000);
+            if (isUploading) {
+              closeUploadProgress();
+            }
+          }, 10000);
         } else {
+          isUploading = false;
           progressText.innerHTML = \`
             <div style="color: #e74c3c;">❌ 上传失败: \${result?.error || '未知错误'}</div>
           \`;
           uploadBtn.disabled = false;
         }
       } catch (error) {
+        isUploading = false;
         progressText.innerHTML = \`
           <div style="color: #e74c3c;">❌ 上传失败: \${error.message}</div>
         \`;
@@ -1135,9 +1216,25 @@ export function buildAdminDashboard() {
       }
     }
     
+    // 页面关闭保护
+    window.addEventListener('beforeunload', (e) => {
+      if (isUploading) {
+        e.preventDefault();
+        e.returnValue = '图片正在后台处理中，确定要离开吗？';
+        return e.returnValue;
+      }
+    });
+    
     // 点击模态框外部关闭
     window.addEventListener('click', (e) => {
       if (e.target.classList.contains('modal')) {
+        // 如果正在上传，提示用户
+        if (e.target.id === 'batchUploadModal' && isUploading) {
+          if (!confirm('图片正在处理中，关闭窗口不会中断后台处理。确定关闭吗？')) {
+            return;
+          }
+          isUploading = false;
+        }
         e.target.classList.remove('show');
       }
     });
