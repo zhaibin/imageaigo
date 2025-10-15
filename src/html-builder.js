@@ -494,9 +494,9 @@ function getClientScript() {
         
         // 加上内容区域的估计高度（描述+标签+padding）
         const contentPadding = 40; // 上下padding各20px
-        const descriptionHeight = 80; // 估计3行文字高度（增加到80px更安全）
-        const tagsHeight = 40; // 估计标签高度（增加到40px）
-        const likeButtonHeight = 25; // 点赞按钮占用的额外空间
+        const descriptionHeight = 50; // 估计3行文字高度
+        const tagsHeight = 25; // 估计标签高度
+        const likeButtonHeight = 15; // 点赞按钮额外空间
         estimatedHeight += contentPadding + descriptionHeight + tagsHeight + likeButtonHeight;
         
         // 立即使用预估高度更新列高度，避免卡片重叠
