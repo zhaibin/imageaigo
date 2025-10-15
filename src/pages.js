@@ -205,21 +205,22 @@ export const ABOUT_CONTENT = `
 <h2>📊 Statistics</h2>
 <p>Trusted by users worldwide to analyze thousands of images with AI-powered intelligence.</p>
 
-<h2>🚀 Future Plans</h2>
+<h2>🚀 Features</h2>
 <ul>
-  <li>Advanced search filters</li>
-  <li>User accounts and private galleries</li>
-  <li>Batch upload support</li>
-  <li>Custom AI models</li>
-  <li>API access for developers</li>
+  <li>✅ AI-powered image analysis (Llama 3.2 Vision)</li>
+  <li>✅ Batch upload support (Admin panel)</li>
+  <li>✅ API access for developers (JSON API)</li>
+  <li>✅ Admin panel with statistics</li>
+  <li>✅ Rate limiting and security</li>
+  <li>✅ KV caching for high performance</li>
 </ul>
 
 <h2>📞 Contact & Support</h2>
 <p>Have questions or feedback? We'd love to hear from you!</p>
 <ul>
-  <li><strong>Website</strong>: imageaigo.cc</li>
+  <li><strong>Website</strong>: <a href="https://imageaigo.cc" target="_blank" rel="noopener">imageaigo.cc</a></li>
   <li><strong>Email</strong>: support@imageaigo.cc</li>
-  <li><strong>GitHub</strong>: github.com/zhaibin/imageaigo</li>
+  <li><strong>GitHub</strong>: <a href="https://github.com/zhaibin/imageaigo" target="_blank" rel="noopener">github.com/zhaibin/imageaigo</a></li>
 </ul>
 
 <h2>🙏 Acknowledgments</h2>
@@ -230,6 +231,6 @@ export const ABOUT_CONTENT = `
   <li>Open source community</li>
 </ul>
 
-<p class="update-date"><em>Version 1.5 - October 14, 2024</em></p>
+<p class="update-date"><em>Version 1.2.2 - October 15, 2024</em></p>
 `;
 
