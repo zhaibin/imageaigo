@@ -232,7 +232,6 @@ button:disabled {
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    transition: transform 0.3s, box-shadow 0.3s;
     cursor: pointer;
     break-inside: avoid;
     page-break-inside: avoid;
@@ -241,17 +240,14 @@ button:disabled {
     width: 100%;
 }
 
-/* 新卡片初始隐藏 */
-.image-card.card-enter {
-    opacity: 0;
-    transform: translateY(30px);
+/* 已加载的卡片：正常悬停效果 */
+.image-card.card-loaded {
+    transition: transform 0.3s, box-shadow 0.3s;
 }
 
-/* 淡入状态 */
-.image-card.card-enter-active {
-    opacity: 1;
-    transform: translateY(0);
-    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+/* 新卡片：使用Web Animations API控制，这里只是后备 */
+.image-card.card-new {
+    will-change: opacity, transform;
 }
 
 .image-card:hover {
@@ -742,23 +738,20 @@ h1, h2, h3 { color: white; }
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    transition: transform 0.3s, box-shadow 0.3s;
+    cursor: pointer;
     break-inside: avoid;
     page-break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
 }
-/* 新卡片初始隐藏 */
-.image-card.card-enter {
-    opacity: 0;
-    transform: translateY(30px);
+/* 已加载的卡片：正常悬停效果 */
+.image-card.card-loaded {
+    transition: transform 0.3s, box-shadow 0.3s;
 }
-/* 淡入状态 */
-.image-card.card-enter-active {
-    opacity: 1;
-    transform: translateY(0);
-    transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+/* 新卡片：使用Web Animations API控制 */
+.image-card.card-new {
+    will-change: opacity, transform;
 }
 .image-card:hover { transform: translateY(-5px); }
 .image-card img {

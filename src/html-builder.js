@@ -444,6 +444,14 @@ function getClientScript() {
             // 等待一小段时间，让加载提示显示
             await new Promise(resolve => setTimeout(resolve, 300));
             
+            // 标记已有卡片为loaded，防止它们被动画影响
+            const existingCards = gallery.querySelectorAll('.image-card');
+            existingCards.forEach(card => {
+                if (!card.classList.contains('card-loaded')) {
+                    card.classList.add('card-loaded');
+                }
+            });
+            
             // 创建文档片段以提高性能
             const fragment = document.createDocumentFragment();
             const newCards = [];
@@ -452,9 +460,11 @@ function getClientScript() {
                 try {
                     const card = createImageCard(image, true); // 启用懒加载
                     // 新卡片初始设置为隐藏状态
-                    card.classList.add('card-enter');
+                    card.classList.add('card-new');
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateY(30px)';
                     fragment.appendChild(card);
-                    newCards.push({ card, delay: index * 50 }); // 每个卡片延迟50ms
+                    newCards.push(card);
                 } catch (err) {
                     console.error(\`Failed to create card \${index}:\`, err);
                 }
@@ -466,15 +476,26 @@ function getClientScript() {
             // 添加卡片到gallery
             gallery.appendChild(fragment);
             
-            // 使用requestAnimationFrame确保DOM已更新，然后触发淡入动画
+            // 使用Web Animations API触发动画（更精确控制）
             requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    newCards.forEach(({ card, delay }) => {
+                newCards.forEach((card, index) => {
+                    setTimeout(() => {
+                        card.animate([
+                            { opacity: 0, transform: 'translateY(30px)' },
+                            { opacity: 1, transform: 'translateY(0)' }
+                        ], {
+                            duration: 600,
+                            easing: 'ease-out',
+                            fill: 'forwards'
+                        });
+                        // 动画结束后清理标记
                         setTimeout(() => {
-                            card.classList.add('card-enter-active');
-                            card.classList.remove('card-enter');
-                        }, delay);
-                    });
+                            card.classList.remove('card-new');
+                            card.classList.add('card-loaded');
+                            card.style.opacity = '';
+                            card.style.transform = '';
+                        }, 600);
+                    }, index * 50);
                 });
             });
             
