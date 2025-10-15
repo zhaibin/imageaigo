@@ -370,12 +370,89 @@ function getClientScript() {
     const infiniteLoading = document.getElementById('infiniteLoading');
     const allLoaded = document.getElementById('allLoaded');
     
-    // 根据设备类型确定每页加载数量
-    function getPageSize() {
+    // 瀑布流布局管理
+    let columnHeights = [];
+    let columnCount = 0;
+    let columnWidth = 0;
+    let columnGap = 20;
+    
+    // 根据设备类型确定列数和列宽
+    function getMasonryConfig() {
         const width = window.innerWidth;
-        if (width < 768) return 10;  // 移动设备
-        if (width < 1024) return 20; // 平板
-        return 30; // 桌面
+        if (width < 768) {
+            return { columns: 2, columnWidth: 160, gap: 15, pageSize: 10 };
+        } else if (width < 1024) {
+            return { columns: 3, columnWidth: 220, gap: 18, pageSize: 20 };
+        } else if (width < 1400) {
+            return { columns: 4, columnWidth: 280, gap: 20, pageSize: 30 };
+        } else {
+            return { columns: 5, columnWidth: 300, gap: 25, pageSize: 30 };
+        }
+    }
+    
+    function getPageSize() {
+        return getMasonryConfig().pageSize;
+    }
+    
+    // 初始化瀑布流布局
+    function initMasonry() {
+        const config = getMasonryConfig();
+        columnCount = config.columns;
+        columnWidth = config.columnWidth;
+        columnGap = config.gap;
+        columnHeights = new Array(columnCount).fill(0);
+    }
+    
+    // 获取最短的列
+    function getShortestColumn() {
+        let minHeight = columnHeights[0];
+        let minIndex = 0;
+        for (let i = 1; i < columnHeights.length; i++) {
+            if (columnHeights[i] < minHeight) {
+                minHeight = columnHeights[i];
+                minIndex = i;
+            }
+        }
+        return minIndex;
+    }
+    
+    // 布局单个卡片
+    function layoutCard(card) {
+        const columnIndex = getShortestColumn();
+        const left = columnIndex * (columnWidth + columnGap);
+        const top = columnHeights[columnIndex];
+        
+        card.style.left = left + 'px';
+        card.style.top = top + 'px';
+        card.style.width = columnWidth + 'px';
+        
+        // 更新该列的高度（需要等图片加载后才能获取准确高度）
+        const updateHeight = () => {
+            const cardHeight = card.offsetHeight;
+            columnHeights[columnIndex] = top + cardHeight + columnGap;
+            updateGalleryHeight();
+        };
+        
+        // 等待图片加载
+        const img = card.querySelector('img');
+        if (img) {
+            if (img.complete) {
+                updateHeight();
+            } else {
+                img.addEventListener('load', updateHeight);
+                img.addEventListener('error', updateHeight);
+            }
+        } else {
+            updateHeight();
+        }
+    }
+    
+    // 更新gallery的总高度
+    function updateGalleryHeight() {
+        if (gallery) {
+            const maxHeight = Math.max(...columnHeights);
+            gallery.style.height = maxHeight + 'px';
+        }
     }
     
     // 显示/隐藏加载提示
@@ -411,13 +488,10 @@ function getClientScript() {
                 hasMore = true;
                 currentCategory = category;
                 if (gallery) {
-                    // 淡出旧内容
-                    gallery.style.opacity = '0.3';
-                    setTimeout(() => {
-                        gallery.innerHTML = '';
-                        gallery.style.opacity = '1';
-                    }, 200);
+                    gallery.innerHTML = '';
+                    gallery.style.height = '0px';
                 }
+                initMasonry();
             }
             
             const pageSize = getPageSize();
@@ -434,68 +508,38 @@ function getClientScript() {
             if (!gallery) return;
             
             if (currentPage === 1 && (!data.images || data.images.length === 0)) {
-                gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px;">No images yet. Upload your first image to get started!</div>';
+                gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px; position: relative;">No images yet. Upload your first image to get started!</div>';
                 hasMore = false;
                 showLoadingIndicator(false);
                 showAllLoadedIndicator(true);
                 return;
             }
             
-            // 等待一小段时间，让加载提示显示
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // 隐藏加载提示
+            showLoadingIndicator(false);
             
-            // 标记已有卡片为loaded，防止它们被动画影响
-            const existingCards = gallery.querySelectorAll('.image-card');
-            existingCards.forEach(card => {
-                if (!card.classList.contains('card-loaded')) {
-                    card.classList.add('card-loaded');
-                }
-            });
-            
-            // 创建文档片段以提高性能
-            const fragment = document.createDocumentFragment();
+            // 创建新卡片
             const newCards = [];
-            
             data.images.forEach((image, index) => {
                 try {
-                    const card = createImageCard(image, true); // 启用懒加载
-                    // 新卡片初始设置为隐藏状态
+                    const card = createImageCard(image, true);
                     card.classList.add('card-new');
-                    card.style.opacity = '0';
-                    card.style.transform = 'translateY(30px)';
-                    fragment.appendChild(card);
+                    gallery.appendChild(card);
                     newCards.push(card);
                 } catch (err) {
                     console.error(\`Failed to create card \${index}:\`, err);
                 }
             });
             
-            // 隐藏加载提示
-            showLoadingIndicator(false);
-            
-            // 添加卡片到gallery
-            gallery.appendChild(fragment);
-            
-            // 使用Web Animations API触发动画（更精确控制）
+            // 布局新卡片（直接显示，无动画跳动）
             requestAnimationFrame(() => {
                 newCards.forEach((card, index) => {
+                    layoutCard(card);
+                    // 快速淡入（200ms，很快不会造成等待感）
                     setTimeout(() => {
-                        card.animate([
-                            { opacity: 0, transform: 'translateY(30px)' },
-                            { opacity: 1, transform: 'translateY(0)' }
-                        ], {
-                            duration: 600,
-                            easing: 'ease-out',
-                            fill: 'forwards'
-                        });
-                        // 动画结束后清理标记
-                        setTimeout(() => {
-                            card.classList.remove('card-new');
-                            card.classList.add('card-loaded');
-                            card.style.opacity = '';
-                            card.style.transform = '';
-                        }, 600);
-                    }, index * 50);
+                        card.classList.add('card-visible');
+                        card.classList.remove('card-new');
+                    }, index * 30);
                 });
             });
             
@@ -512,7 +556,7 @@ function getClientScript() {
         } catch (error) {
             console.error('[LoadImages] Error:', error);
             if (currentPage === 1 && gallery) {
-                gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px;">Error loading images. Please refresh.</div>';
+                gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px; position: relative;">Error loading images. Please refresh.</div>';
             }
         } finally {
             isLoading = false;
@@ -705,15 +749,28 @@ function getClientScript() {
         }, 100);
     });
     
-    // 窗口大小改变时重新计算
+    // 窗口大小改变时重新布局
     let resizeTimeout;
     window.addEventListener('resize', () => {
         if (resizeTimeout) clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
-            console.log('[Resize] Window resized, page size:', getPageSize());
+            console.log('[Resize] Window resized, relaying out...');
+            const oldConfig = { columns: columnCount, columnWidth, gap: columnGap };
+            const newConfig = getMasonryConfig();
+            
+            // 只有在列数或列宽变化时才重新布局
+            if (oldConfig.columns !== newConfig.columns || oldConfig.columnWidth !== newConfig.columnWidth) {
+                initMasonry();
+                const allCards = gallery.querySelectorAll('.image-card');
+                allCards.forEach(card => {
+                    layoutCard(card);
+                });
+            }
         }, 500);
     });
 
+    console.log('[Init] Initializing masonry layout...');
+    initMasonry();
     console.log('[Init] Loading images and categories...');
     loadImages(null, true); // 初始加载，reset=true
     loadCategories();
