@@ -1,5 +1,7 @@
 // Unsplash 自动同步模块
 import { generateHash } from './utils.js';
+import { analyzeImage, getImageDimensions } from './analyzer.js';
+import { generateSlug } from './slug-generator.js';
 
 // Cron 触发器 - 每天同步一次 Unsplash 最新图片
 export async function handleUnsplashSync(env) {
@@ -139,9 +141,6 @@ async function processUnsplashPhoto(photo, env) {
     
     const finalUrl = `/r2/${r2Key}`;
     
-    // 导入 AI 分析模块
-    const { analyzeImage, getImageDimensions } = await import('./analyzer.js');
-    
     // 获取图片尺寸
     const dimensions = await getImageDimensions(imageData);
     
@@ -155,7 +154,6 @@ async function processUnsplashPhoto(photo, env) {
     }
     
     // 存储到数据库
-    const { generateSlug } = await import('./slug-generator.js');
     const slug = await generateSlug(analysis.description, env.DB);
     
     const result = await env.DB.prepare(`
