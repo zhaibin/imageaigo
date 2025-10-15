@@ -1161,7 +1161,7 @@ async function handleImageDetailPage(request, env, imageSlug) {
             <h3 style="color: #333; font-size: 1rem; margin: 0; font-weight: 600;">
               <span id="jsonToggleIcon">▶</span> JSON Data
             </h3>
-            <span style="color: #999; font-size: 0.85rem;">点击展开/折叠</span>
+            <span style="color: #999; font-size: 0.85rem;">Click to expand/collapse</span>
           </div>
           <div id="jsonContent" style="display: none;">
             <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 10px;">

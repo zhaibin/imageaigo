@@ -467,6 +467,41 @@ button:disabled {
     }
 }
 
+/* 无限滚动加载提示 */
+.infinite-loading {
+    text-align: center;
+    padding: 40px 20px;
+    color: white;
+}
+
+.infinite-loading .spinner {
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top: 3px solid white;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 15px;
+}
+
+.infinite-loading p {
+    font-size: 1rem;
+    opacity: 0.9;
+}
+
+/* 全部加载完成提示 */
+.all-loaded {
+    text-align: center;
+    padding: 40px 20px;
+    color: white;
+    opacity: 0.7;
+}
+
+.all-loaded p {
+    font-size: 1.1rem;
+    font-weight: 500;
+}
+
 @media (max-width: 768px) {
     h1 {
         font-size: 2rem;

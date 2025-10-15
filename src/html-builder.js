@@ -105,6 +105,17 @@ export function buildMainHTML() {
         </nav>
 
         <main class="gallery" id="gallery" role="main" aria-label="Image gallery"></main>
+        
+        <!-- 加载提示 -->
+        <div class="infinite-loading" id="infiniteLoading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading more images...</p>
+        </div>
+        
+        <!-- 全部加载完成提示 -->
+        <div class="all-loaded" id="allLoaded" style="display: none;">
+            <p>✓ All images loaded</p>
+        </div>
 
         ${buildFooter()}
     </div>
@@ -354,6 +365,10 @@ function getClientScript() {
     let isLoading = false;
     let hasMore = true;
     let currentCategory = null;
+    let isPreloading = false;
+    
+    const infiniteLoading = document.getElementById('infiniteLoading');
+    const allLoaded = document.getElementById('allLoaded');
     
     // 根据设备类型确定每页加载数量
     function getPageSize() {
@@ -362,12 +377,33 @@ function getClientScript() {
         if (width < 1024) return 20; // 平板
         return 30; // 桌面
     }
+    
+    // 显示/隐藏加载提示
+    function showLoadingIndicator(show) {
+        if (infiniteLoading) {
+            infiniteLoading.style.display = show ? 'block' : 'none';
+        }
+    }
+    
+    // 显示全部加载完成提示
+    function showAllLoadedIndicator(show) {
+        if (allLoaded) {
+            allLoaded.style.display = show ? 'block' : 'none';
+        }
+    }
 
     async function loadImages(category = null, reset = false) {
-        if (isLoading || (!hasMore && !reset)) return;
+        if (isLoading || (!hasMore && !reset)) {
+            if (!hasMore && !reset) {
+                showAllLoadedIndicator(true);
+            }
+            return;
+        }
         
         try {
             isLoading = true;
+            showLoadingIndicator(true);
+            showAllLoadedIndicator(false);
             
             // 如果category变化或reset，重置状态
             if (reset || category !== currentCategory) {
@@ -393,6 +429,8 @@ function getClientScript() {
             if (currentPage === 1 && (!data.images || data.images.length === 0)) {
                 gallery.innerHTML = '<div style="color: white; text-align: center; padding: 40px;">No images yet. Upload your first image to get started!</div>';
                 hasMore = false;
+                showLoadingIndicator(false);
+                showAllLoadedIndicator(true);
                 return;
             }
             
@@ -415,6 +453,11 @@ function getClientScript() {
             hasMore = data.hasMore || false;
             currentPage++;
             
+            // 如果没有更多图片，显示完成提示
+            if (!hasMore) {
+                showAllLoadedIndicator(true);
+            }
+            
             console.log(\`[LoadImages] Page loaded. HasMore: \${hasMore}, NextPage: \${currentPage}\`);
         } catch (error) {
             console.error('[LoadImages] Error:', error);
@@ -423,6 +466,7 @@ function getClientScript() {
             }
         } finally {
             isLoading = false;
+            showLoadingIndicator(false);
         }
     }
 
@@ -590,7 +634,7 @@ function getClientScript() {
         };
     }
 
-    // 无限滚动监听
+    // 无限滚动监听（提前预加载）
     let scrollTimeout;
     window.addEventListener('scroll', () => {
         if (scrollTimeout) clearTimeout(scrollTimeout);
@@ -599,11 +643,14 @@ function getClientScript() {
             const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
             const clientHeight = document.documentElement.clientHeight;
             
-            // 距离底部300px时加载更多
-            if (scrollTop + clientHeight >= scrollHeight - 300) {
-                if (!isLoading && hasMore) {
-                    console.log('[InfiniteScroll] Loading more images...');
-                    loadImages(currentCategory);
+            // 距离底部800px时开始预加载（提前触发）
+            if (scrollTop + clientHeight >= scrollHeight - 800) {
+                if (!isLoading && hasMore && !isPreloading) {
+                    console.log('[InfiniteScroll] Preloading more images...');
+                    isPreloading = true;
+                    loadImages(currentCategory).finally(() => {
+                        isPreloading = false;
+                    });
                 }
             }
         }, 100);
