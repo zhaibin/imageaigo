@@ -108,6 +108,18 @@ export default {
       if (path === '/api/search' && request.method === 'GET') {
         return await handleSearchAPI(request, env);
       }
+      
+      // Category images API
+      if (path.match(/^\/api\/category\/[^/]+\/images$/) && request.method === 'GET') {
+        const category = decodeURIComponent(path.match(/^\/api\/category\/([^/]+)\/images$/)[1]);
+        return await handleCategoryImagesAPI(request, env, category);
+      }
+      
+      // Tag images API
+      if (path.match(/^\/api\/tag\/[^/]+\/images$/) && request.method === 'GET') {
+        const tagName = decodeURIComponent(path.match(/^\/api\/tag\/([^/]+)\/images$/)[1]);
+        return await handleTagImagesAPI(request, env, tagName);
+      }
 
       if (path === '/api/analyze' && request.method === 'POST') {
         return await handleAnalyze(request, env);
@@ -1270,64 +1282,15 @@ async function handleImageDetailPage(request, env, imageSlug) {
 }
 
 async function handleTagPage(request, env, tagName) {
-  const { results: images } = await env.DB.prepare(`
-    SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
-    FROM images i
-    JOIN image_tags it ON i.id = it.image_id
-    JOIN tags t ON it.tag_id = t.id
-    WHERE t.name = ?
-    ORDER BY i.created_at DESC
-    LIMIT 50
-  `).bind(tagName).all();
-  
-  // 获取每张图片的标签
-  for (let img of images) {
-    const { results: tagResults } = await env.DB.prepare(`
-      SELECT t.name, t.level, it.weight
-      FROM tags t JOIN image_tags it ON t.id = it.tag_id
-      WHERE it.image_id = ?
-      ORDER BY t.level, it.weight DESC
-      LIMIT 5
-    `).bind(img.id).all();
-    img.tags = tagResults;
-  }
-  
-  const imageCards = images.map(img => {
-    const tagsHTML = img.tags && img.tags.length > 0 ? `
-      <div class="tags">
-        ${img.tags.slice(0, 5).map(tag => `
-          <a href="${tag.level === 1 ? '/category/' : '/tag/'}${encodeURIComponent(tag.name)}" class="tag level-${tag.level}">
-            ${escapeHtml(tag.name)}
-          </a>
-        `).join('')}
-      </div>
-    ` : '';
-    
-    return `
-    <article class="image-card">
-      <a href="/image/${img.slug}">
-        <img src="${img.image_url}" alt="${escapeHtml(img.description || tagName)}" loading="lazy"${img.width && img.height ? ` style="aspect-ratio: ${img.width} / ${img.height}"` : ''}>
-      </a>
-      <div class="image-card-content">
-        <div class="like-button" onclick="toggleLike(${img.id}, this, event)">
-          ❤️
-          <span class="like-count">${img.likes_count || 0}</span>
-        </div>
-        <p class="image-description">${escapeHtml(img.description || '')}</p>
-        ${tagsHTML}
-      </div>
-    </article>
-    `;
-  }).join('');
-  
   const html = buildPageTemplate({
     title: `${tagName} Images | ImageAI Go`,
-    description: `Browse images tagged with "${tagName}". ${images.length} results.`,
+    description: `Browse images tagged with "${tagName}".`,
     heading: `#${tagName}`,
-    subtitle: `${images.length} images`,
-    content: imageCards,
-    canonical: `https://imageaigo.cc/tag/${encodeURIComponent(tagName)}`
+    subtitle: `Explore images with this tag`,
+    content: '',
+    canonical: `https://imageaigo.cc/tag/${encodeURIComponent(tagName)}`,
+    pageType: 'tag',
+    pageParams: { tag: tagName }
   });
   
   return new Response(html, {
@@ -1338,64 +1301,15 @@ async function handleTagPage(request, env, tagName) {
 async function handleCategoryPage(request, env, path) {
   const category = decodeURIComponent(path.replace('/category/', '').replace('.html', ''));
   
-  const { results: images } = await env.DB.prepare(`
-    SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
-    FROM images i
-    JOIN image_tags it ON i.id = it.image_id
-    JOIN tags t ON it.tag_id = t.id
-    WHERE t.name = ? AND t.level = 1
-    ORDER BY i.created_at DESC
-    LIMIT 50
-  `).bind(category).all();
-  
-  // 获取每张图片的标签
-  for (let img of images) {
-    const { results: tagResults } = await env.DB.prepare(`
-      SELECT t.name, t.level, it.weight
-      FROM tags t JOIN image_tags it ON t.id = it.tag_id
-      WHERE it.image_id = ?
-      ORDER BY t.level, it.weight DESC
-      LIMIT 5
-    `).bind(img.id).all();
-    img.tags = tagResults;
-  }
-  
-  const imageCards = images.map(img => {
-    const tagsHTML = img.tags && img.tags.length > 0 ? `
-      <div class="tags">
-        ${img.tags.slice(0, 5).map(tag => `
-          <a href="${tag.level === 1 ? '/category/' : '/tag/'}${encodeURIComponent(tag.name)}" class="tag level-${tag.level}">
-            ${escapeHtml(tag.name)}
-          </a>
-        `).join('')}
-      </div>
-    ` : '';
-    
-    return `
-    <article class="image-card" data-image-id="${img.id}">
-      <a href="/image/${img.slug}">
-        <img src="${img.image_url}" alt="${escapeHtml(img.description || category)}" loading="lazy"${img.width && img.height ? ` style="aspect-ratio: ${img.width} / ${img.height}"` : ''}>
-      </a>
-      <div class="image-card-content">
-        <div class="like-button" onclick="toggleLike(${img.id}, this, event)">
-          ❤️
-          <span class="like-count">${img.likes_count || 0}</span>
-        </div>
-        <p class="image-description">${escapeHtml(img.description || '')}</p>
-        ${tagsHTML}
-      </div>
-    </article>
-    `;
-  }).join('');
-  
   const html = buildPageTemplate({
     title: `${category} Images - ImageAI Go`,
-    description: `Browse ${category} images analyzed by AI. ${images.length} photos.`,
+    description: `Browse ${category} images analyzed by AI.`,
     heading: `${category} Gallery`,
-    subtitle: `${images.length} images`,
-    content: imageCards,
-    canonical: `https://imageaigo.cc/category/${encodeURIComponent(category)}`
+    subtitle: `Explore ${category} images`,
+    content: '',
+    canonical: `https://imageaigo.cc/category/${encodeURIComponent(category)}`,
+    pageType: 'category',
+    pageParams: { category: category }
   });
   
   return new Response(html, {
@@ -1406,9 +1320,12 @@ async function handleCategoryPage(request, env, path) {
 async function handleSearchAPI(request, env) {
   const url = new URL(request.url);
   const query = url.searchParams.get('q') || '';
+  const page = parseInt(url.searchParams.get('page') || '1');
+  const limit = parseInt(url.searchParams.get('limit') || '20');
+  const offset = (page - 1) * limit;
   
   if (!query || query.length < 2) {
-    return new Response(JSON.stringify({ images: [], query }), {
+    return new Response(JSON.stringify({ images: [], query, hasMore: false }), {
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
     });
   }
@@ -1421,10 +1338,99 @@ async function handleSearchAPI(request, env) {
     LEFT JOIN tags t ON it.tag_id = t.id
     WHERE i.description LIKE ? OR t.name LIKE ?
     ORDER BY i.created_at DESC
-    LIMIT 50
-  `).bind(`%${query}%`, `%${query}%`).all();
+    LIMIT ? OFFSET ?
+  `).bind(`%${query}%`, `%${query}%`, limit + 1, offset).all();
   
-  return new Response(JSON.stringify({ images: results, query }), {
+  const hasMore = results.length > limit;
+  const images = hasMore ? results.slice(0, limit) : results;
+  
+  // 获取每张图片的标签
+  for (let img of images) {
+    const { results: tagResults } = await env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+      LIMIT 5
+    `).bind(img.id).all();
+    img.tags = tagResults;
+  }
+  
+  return new Response(JSON.stringify({ images, query, hasMore }), {
+    headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+  });
+}
+
+async function handleCategoryImagesAPI(request, env, category) {
+  const url = new URL(request.url);
+  const page = parseInt(url.searchParams.get('page') || '1');
+  const limit = parseInt(url.searchParams.get('limit') || '20');
+  const offset = (page - 1) * limit;
+  
+  const { results } = await env.DB.prepare(`
+    SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
+      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+    FROM images i
+    JOIN image_tags it ON i.id = it.image_id
+    JOIN tags t ON it.tag_id = t.id
+    WHERE t.name = ? AND t.level = 1
+    ORDER BY i.created_at DESC
+    LIMIT ? OFFSET ?
+  `).bind(category, limit + 1, offset).all();
+  
+  const hasMore = results.length > limit;
+  const images = hasMore ? results.slice(0, limit) : results;
+  
+  // 获取每张图片的标签
+  for (let img of images) {
+    const { results: tagResults } = await env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+      LIMIT 5
+    `).bind(img.id).all();
+    img.tags = tagResults;
+  }
+  
+  return new Response(JSON.stringify({ images, hasMore }), {
+    headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+  });
+}
+
+async function handleTagImagesAPI(request, env, tagName) {
+  const url = new URL(request.url);
+  const page = parseInt(url.searchParams.get('page') || '1');
+  const limit = parseInt(url.searchParams.get('limit') || '20');
+  const offset = (page - 1) * limit;
+  
+  const { results } = await env.DB.prepare(`
+    SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
+      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+    FROM images i
+    JOIN image_tags it ON i.id = it.image_id
+    JOIN tags t ON it.tag_id = t.id
+    WHERE t.name = ?
+    ORDER BY i.created_at DESC
+    LIMIT ? OFFSET ?
+  `).bind(tagName, limit + 1, offset).all();
+  
+  const hasMore = results.length > limit;
+  const images = hasMore ? results.slice(0, limit) : results;
+  
+  // 获取每张图片的标签
+  for (let img of images) {
+    const { results: tagResults } = await env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+      LIMIT 5
+    `).bind(img.id).all();
+    img.tags = tagResults;
+  }
+  
+  return new Response(JSON.stringify({ images, hasMore }), {
     headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
   });
 }
@@ -1433,85 +1439,17 @@ async function handleSearchPage(request, env) {
   const url = new URL(request.url);
   const query = url.searchParams.get('q') || '';
   
-  const content = `
-    <div id="searchResults"></div>
-    <script>
-      async function performSearch() {
-        const q = new URLSearchParams(window.location.search).get('q');
-        if (!q) {
-          document.getElementById('searchResults').innerHTML = '<div style="color: white; padding: 40px; text-align: center;">Enter a search term</div>';
-          return;
-        }
-        const res = await fetch('/api/search?q=' + encodeURIComponent(q));
-        const data = await res.json();
-        const div = document.getElementById('searchResults');
-        if (data.images.length === 0) {
-          div.innerHTML = '<div style="color: white; padding: 40px; text-align: center;">No results for "' + q + '"</div>';
-          return;
-        }
-        const gallery = document.createElement('div');
-        gallery.className = 'gallery';
-        data.images.forEach(img => {
-          const card = document.createElement('article');
-          card.className = 'image-card';
-          
-          const link = document.createElement('a');
-          link.href = '/image/' + img.slug;
-          
-          const imgEl = document.createElement('img');
-          imgEl.src = img.image_url;
-          imgEl.alt = img.description || 'Image';
-          imgEl.loading = 'lazy';
-          if (img.width && img.height) {
-            imgEl.style.aspectRatio = img.width + ' / ' + img.height;
-          }
-          
-          link.appendChild(imgEl);
-          
-          const content = document.createElement('div');
-          content.className = 'image-card-content';
-          
-          // 点赞按钮（使用首页样式）
-          const likeButton = document.createElement('div');
-          likeButton.className = 'like-button';
-          likeButton.innerHTML = '❤️';
-          likeButton.onclick = (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            toggleLike(img.id, likeButton, e);
-          };
-          const likeCount = document.createElement('span');
-          likeCount.className = 'like-count';
-          likeCount.textContent = img.likes_count || 0;
-          likeButton.appendChild(likeCount);
-          
-          const desc = document.createElement('p');
-          desc.className = 'image-description';
-          desc.textContent = img.description || '';
-          
-          content.appendChild(likeButton);
-          content.appendChild(desc);
-          
-          card.appendChild(link);
-          card.appendChild(content);
-          gallery.appendChild(card);
-        });
-        div.innerHTML = '';
-        div.appendChild(gallery);
-      }
-      performSearch();
-    </script>
-  `;
-  
   const html = buildPageTemplate({
     title: query ? `Search: ${query} | ImageAI Go` : 'Search | ImageAI Go',
     description: query ? `Results for "${query}"` : 'Search images',
     heading: query ? 'Search Results' : 'Search Images',
     subtitle: query ? `Results for "${query}"` : 'Find images',
-    content,
+    content: '',
     canonical: `https://imageaigo.cc/search${query ? '?q=' + encodeURIComponent(query) : ''}`,
     searchBox: true,
-    searchQuery: query
+    searchQuery: query,
+    pageType: 'search',
+    pageParams: { query: query }
   });
   
   return new Response(html, {

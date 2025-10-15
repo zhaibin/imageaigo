@@ -510,8 +510,26 @@ function getClientScript() {
             }
             
             const pageSize = getPageSize();
-            let url = \`/api/images?page=\${currentPage}&limit=\${pageSize}\`;
-            if (category) url += '&category=' + encodeURIComponent(category);
+            let url;
+            
+            // 根据页面类型构建不同的 API URL
+            if (typeof PAGE_TYPE !== 'undefined' && PAGE_TYPE === 'search') {
+                // 搜索页面
+                const query = PAGE_PARAMS.query || '';
+                url = \`/api/search?q=\${encodeURIComponent(query)}&page=\${currentPage}&limit=\${pageSize}\`;
+            } else if (typeof PAGE_TYPE !== 'undefined' && PAGE_TYPE === 'category') {
+                // 分类页面
+                const categoryName = PAGE_PARAMS.category || '';
+                url = \`/api/category/\${encodeURIComponent(categoryName)}/images?page=\${currentPage}&limit=\${pageSize}\`;
+            } else if (typeof PAGE_TYPE !== 'undefined' && PAGE_TYPE === 'tag') {
+                // 标签页面
+                const tagName = PAGE_PARAMS.tag || '';
+                url = \`/api/tag/\${encodeURIComponent(tagName)}/images?page=\${currentPage}&limit=\${pageSize}\`;
+            } else {
+                // 首页
+                url = \`/api/images?page=\${currentPage}&limit=\${pageSize}\`;
+                if (category) url += '&category=' + encodeURIComponent(category);
+            }
 
             console.log(\`[LoadImages] Fetching page \${currentPage}:\`, url);
             const response = await fetch(url);
@@ -896,7 +914,7 @@ export function buildLegalPage(title, heading, content) {
 </html>`;
 }
 
-export function buildPageTemplate({ title, description, heading, subtitle, content, canonical, ogImage, searchBox = false, searchQuery = '' }) {
+export function buildPageTemplate({ title, description, heading, subtitle, content, canonical, ogImage, searchBox = false, searchQuery = '', pageType = 'page', pageParams = {} }) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -911,7 +929,7 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
   <meta property="og:description" content="${escapeHtml(description)}">
   ${ogImage ? `<meta property="og:image" content="${ogImage}">` : ''}
   <meta property="twitter:card" content="summary_large_image">
-  <style>${PAGE_TEMPLATE_STYLES}</style>
+  <style>${MAIN_STYLES}</style>
 </head>
 <body>
   <a href="/" class="floating-back-btn" title="Back to Home">
@@ -929,48 +947,30 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         </form>
       ` : ''}
     </header>
-    <main class="gallery">
-      ${content}
+    <main class="gallery" id="gallery">
+      <!-- 图片将通过 JavaScript 动态加载 -->
     </main>
+    
+    <!-- 加载提示 -->
+    <div class="infinite-loading" id="infiniteLoading" style="display: none;">
+      <div class="loading-spinner"></div>
+      <p>Loading more images...</p>
+    </div>
+    
+    <!-- 全部加载完成提示 -->
+    <div class="all-loaded" id="allLoaded" style="display: none;">
+      <p>✨ All images loaded</p>
+    </div>
+    
     ${buildFooter()}
   </div>
   
   <script>
-    // 点赞功能
-    async function toggleLike(imageId, button, event) {
-      if (event) event.preventDefault();
-      
-      try {
-        const isLiked = button.classList.contains('liked');
-        const endpoint = isLiked ? '/api/unlike' : '/api/like';
-        
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageId })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success || data.liked !== undefined) {
-          button.classList.toggle('liked', data.liked);
-          const countEl = button.querySelector('.like-count');
-          if (countEl) {
-            countEl.textContent = data.likesCount || 0;
-          }
-        }
-      } catch (error) {
-        console.error('Like error:', error);
-      }
-    }
+    // 页面配置
+    const PAGE_TYPE = '${pageType}';
+    const PAGE_PARAMS = ${JSON.stringify(pageParams)};
     
-    // 图片懒加载 - 为所有图片添加loading="lazy"
-    document.querySelectorAll('.gallery img').forEach(img => {
-      if (!img.hasAttribute('loading')) {
-        img.loading = 'lazy';
-        img.decoding = 'async';
-      }
-    });
+    ${getClientScript(true, pageType, pageParams)}
   </script>
 </body>
 </html>`;
