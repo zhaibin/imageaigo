@@ -376,18 +376,53 @@ function getClientScript() {
     let columnWidth = 0;
     let columnGap = 20;
     
-    // 根据设备类型确定列数和列宽
+    // 根据设备类型和容器实际宽度确定列数和列宽
     function getMasonryConfig() {
-        const width = window.innerWidth;
-        if (width < 768) {
-            return { columns: 2, columnWidth: 160, gap: 15, pageSize: 10 };
-        } else if (width < 1024) {
-            return { columns: 3, columnWidth: 220, gap: 18, pageSize: 20 };
-        } else if (width < 1400) {
-            return { columns: 4, columnWidth: 280, gap: 20, pageSize: 30 };
+        if (!gallery) return { columns: 4, columnWidth: 280, gap: 20, pageSize: 30 };
+        
+        const containerWidth = gallery.offsetWidth || gallery.clientWidth;
+        const screenWidth = window.innerWidth;
+        
+        let columns, minColumnWidth, gap, pageSize;
+        
+        // 根据屏幕宽度确定基础配置
+        if (screenWidth < 768) {
+            columns = 2;
+            minColumnWidth = 150;
+            gap = 15;
+            pageSize = 10;
+        } else if (screenWidth < 1024) {
+            columns = 3;
+            minColumnWidth = 200;
+            gap = 18;
+            pageSize = 20;
+        } else if (screenWidth < 1400) {
+            columns = 4;
+            minColumnWidth = 250;
+            gap = 20;
+            pageSize = 30;
         } else {
-            return { columns: 5, columnWidth: 300, gap: 25, pageSize: 30 };
+            columns = 5;
+            minColumnWidth = 280;
+            gap = 25;
+            pageSize = 30;
         }
+        
+        // 根据实际容器宽度计算列宽
+        const totalGapWidth = (columns - 1) * gap;
+        const availableWidth = containerWidth - totalGapWidth;
+        const calculatedColumnWidth = Math.floor(availableWidth / columns);
+        
+        // 如果计算出的列宽小于最小值，减少列数
+        if (calculatedColumnWidth < minColumnWidth && columns > 1) {
+            columns = columns - 1;
+            const newTotalGapWidth = (columns - 1) * gap;
+            const newAvailableWidth = containerWidth - newTotalGapWidth;
+            const finalColumnWidth = Math.floor(newAvailableWidth / columns);
+            return { columns, columnWidth: finalColumnWidth, gap, pageSize };
+        }
+        
+        return { columns, columnWidth: calculatedColumnWidth, gap, pageSize };
     }
     
     function getPageSize() {
@@ -401,6 +436,7 @@ function getClientScript() {
         columnWidth = config.columnWidth;
         columnGap = config.gap;
         columnHeights = new Array(columnCount).fill(0);
+        console.log('[Masonry] Init:', config);
     }
     
     // 获取最短的列
