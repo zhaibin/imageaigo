@@ -2,60 +2,90 @@
 import { analyzeImage, getImageDimensions } from './analyzer.js';
 import { generateHash } from './utils.js';
 
-// 队列消费者 - 处理图片分析任务
+// 队列消费者 - 处理图片分析任务（并发处理，限制并发数）
 export async function handleQueue(batch, env) {
-  console.log(`[QueueConsumer] Processing batch of ${batch.messages.length} messages`);
+  console.log(`[QueueConsumer] Processing batch of ${batch.messages.length} messages with concurrency limit`);
   
-  for (const message of batch.messages) {
-    const startTime = Date.now();
-    const { batchId, fileIndex, fileName } = message.body;
+  // 并发处理消息，每次最多3个并发
+  const concurrency = 3;
+  const results = [];
+  
+  for (let i = 0; i < batch.messages.length; i += concurrency) {
+    const messageBatch = batch.messages.slice(i, i + concurrency);
+    console.log(`[QueueConsumer] Processing messages ${i + 1}-${i + messageBatch.length} (concurrent: ${messageBatch.length})`);
     
-    try {
-      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Processing ${fileName}`);
-      
-      // 检查批次是否已取消
-      const batchStatus = await getBatchStatus(env, batchId);
-      if (!batchStatus || batchStatus.status === 'cancelled') {
-        console.log(`[QueueConsumer:${batchId}] Batch cancelled, skipping message`);
-        message.ack();
-        continue;
-      }
-      
-      // 更新状态：正在处理
-      await updateBatchStatus(env, batchId, fileIndex, 'processing', null, fileName);
-      
-      // 从 R2 获取临时图片数据
-      const tempKey = `temp/${batchId}/${fileIndex}`;
-      const r2Object = await env.R2.get(tempKey);
-      
-      if (!r2Object) {
-        throw new Error('Temporary file not found in R2');
-      }
-      
-      const imageData = await r2Object.arrayBuffer();
-      const metadata = r2Object.customMetadata || {};
-      const imageHash = metadata.hash;
-      
-      // 检查是否已存在（再次确认，防止并发重复）
-      const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?')
-        .bind(imageHash).first();
-      
-      if (existing) {
-        console.log(`[QueueConsumer:${batchId}:${fileIndex}] Duplicate found: ${existing.slug}`);
-        await updateBatchStatus(env, batchId, fileIndex, 'skipped', `Duplicate of ${existing.slug}`, fileName);
-        
-        // 删除临时文件
-        await env.R2.delete(tempKey);
-        message.ack();
-        continue;
-      }
-      
-      // 上传到永久存储
-      const timestamp = Date.now();
-      const randomStr = Math.random().toString(36).substring(2, 8);
-      const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
-      
-      await env.R2.put(r2Key, imageData, {
+    // 并发处理这一组消息
+    const batchResults = await Promise.allSettled(
+      messageBatch.map(message => processQueueMessage(message, env))
+    );
+    
+    results.push(...batchResults);
+    
+    // 组间稍微延迟，避免资源竞争
+    if (i + concurrency < batch.messages.length) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  
+  const succeeded = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  console.log(`[QueueConsumer] Batch completed: ${succeeded} succeeded, ${failed} failed`);
+}
+
+// 处理单个队列消息
+async function processQueueMessage(message, env) {
+  const startTime = Date.now();
+  const { batchId, fileIndex, fileName, imageHash } = message.body;
+  
+  try {
+    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Processing ${fileName}`);
+    
+    // 检查批次是否已取消
+    const batchStatus = await getBatchStatus(env, batchId);
+    if (!batchStatus || batchStatus.status === 'cancelled') {
+      console.log(`[QueueConsumer:${batchId}] Batch cancelled, skipping message`);
+      message.ack();
+      return;
+    }
+    
+    // 更新状态：正在处理
+    await updateBatchStatus(env, batchId, fileIndex, 'processing', null, fileName);
+    
+    // 从 R2 获取临时图片数据（超时保护）
+    const tempKey = `temp/${batchId}/${fileIndex}`;
+    const r2Object = await Promise.race([
+      env.R2.get(tempKey),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('R2 get timeout')), 10000)
+      )
+    ]);
+    
+    if (!r2Object) {
+      throw new Error('Temporary file not found in R2');
+    }
+    
+    const imageData = await r2Object.arrayBuffer();
+    const metadata = r2Object.customMetadata || {};
+    
+    // 再次检查重复（防止并发问题）
+    const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?')
+      .bind(imageHash).first();
+    
+    if (existing) {
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Duplicate found: ${existing.slug}`);
+      await updateBatchStatus(env, batchId, fileIndex, 'skipped', `Duplicate of ${existing.slug}`, fileName);
+      await env.R2.delete(tempKey);
+      message.ack();
+      return;
+    }
+    
+    // 上传到永久存储
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
+    
+    await Promise.race([
+      env.R2.put(r2Key, imageData, {
         httpMetadata: { 
           contentType: metadata.contentType || 'image/jpeg',
           cacheControl: 'public, max-age=31536000'
@@ -63,65 +93,81 @@ export async function handleQueue(batch, env) {
         customMetadata: {
           uploadedAt: new Date().toISOString(),
           hash: imageHash,
-          sourceUrl: 'batch-upload',
+          sourceUrl: metadata.sourceUrl || 'batch-upload',
           originalName: fileName
         }
-      });
-      
-      const finalUrl = `/r2/${r2Key}`;
-      
-      // 获取图片尺寸
-      const dimensions = await getImageDimensions(imageData);
-      
-      // AI 分析（带超时保护）
-      const analysis = await Promise.race([
-        analyzeImage(imageData, env.AI),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('AI analysis timeout (60s)')), 60000)
-        )
-      ]);
-      
-      if (!analysis) {
-        throw new Error('AI analysis returned null');
-      }
-      
-      analysis.dimensions = dimensions;
-      
-      // 存储到数据库
-      const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis);
-      
-      // 删除临时文件
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('R2 upload timeout')), 30000)
+      )
+    ]);
+    
+    const finalUrl = `/r2/${r2Key}`;
+    
+    // 获取图片尺寸
+    const dimensions = await Promise.race([
+      getImageDimensions(imageData),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Get dimensions timeout')), 10000)
+      )
+    ]);
+    
+    // AI 分析（带超时保护）
+    const analysis = await Promise.race([
+      analyzeImage(imageData, env.AI),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI analysis timeout (60s)')), 60000)
+      )
+    ]);
+    
+    if (!analysis) {
+      throw new Error('AI analysis returned null');
+    }
+    
+    analysis.dimensions = dimensions;
+    
+    // 存储到数据库
+    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis);
+    
+    // 删除临时文件
+    await env.R2.delete(tempKey).catch(err => 
+      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Failed to delete temp file:`, err.message)
+    );
+    
+    const duration = Date.now() - startTime;
+    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Success: ${slug} (${duration}ms)`);
+    
+    // 更新状态：完成
+    await updateBatchStatus(env, batchId, fileIndex, 'completed');
+    
+    // 确认消息处理成功
+    message.ack();
+    
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`[QueueConsumer:${batchId}:${fileIndex}] Failed after ${duration}ms:`, error.message);
+    
+    // 更新状态：失败
+    await updateBatchStatus(env, batchId, fileIndex, 'failed', error.message);
+    
+    // 清理临时文件
+    try {
+      const tempKey = `temp/${batchId}/${fileIndex}`;
       await env.R2.delete(tempKey);
-      
-      const duration = Date.now() - startTime;
-      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Success: ${slug} (${duration}ms)`);
-      
-      // 更新状态：完成
-      await updateBatchStatus(env, batchId, fileIndex, 'completed');
-      
-      // 确认消息处理成功
-      message.ack();
-      
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      console.error(`[QueueConsumer:${batchId}:${fileIndex}] Failed after ${duration}ms:`, error.message);
-      
-      // 更新状态：失败
-      await updateBatchStatus(env, batchId, fileIndex, 'failed', error.message);
-      
-      // 重试次数检查
-      if (message.attempts >= 3) {
-        console.error(`[QueueConsumer:${batchId}:${fileIndex}] Max retries reached, giving up`);
-        message.ack(); // 确认消息，不再重试
-      } else {
-        // 重试（消息会自动重新入队）
-        console.log(`[QueueConsumer:${batchId}:${fileIndex}] Will retry (attempt ${message.attempts + 1}/3)`);
-        message.retry();
-      }
+    } catch (cleanupErr) {
+      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Cleanup failed:`, cleanupErr.message);
+    }
+    
+    // 重试次数检查
+    if (message.attempts >= 3) {
+      console.error(`[QueueConsumer:${batchId}:${fileIndex}] Max retries reached, giving up`);
+      message.ack(); // 确认消息，不再重试
+    } else {
+      // 重试（消息会自动重新入队）
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Will retry (attempt ${message.attempts + 1}/3)`);
+      message.retry();
     }
   }
-  
-  console.log(`[QueueConsumer] Batch processing completed`);
 }
 
 // 辅助函数

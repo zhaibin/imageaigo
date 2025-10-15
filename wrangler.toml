@@ -34,3 +34,7 @@ max_batch_timeout = 30
 max_retries = 3
 dead_letter_queue = "image-processing-dlq"
 
+# Cron Trigger for Unsplash sync (daily at 00:00 UTC)
+[triggers]
+crons = ["0 0 * * *"]
+

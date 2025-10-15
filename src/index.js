@@ -8,6 +8,7 @@ import { generateSlug, generateTagSlug } from './slug-generator';
 import { buildAdminLoginPage, buildAdminDashboard } from './admin';
 import { buildFooter } from './footer-template';
 import { handleQueue } from './queue-handler';
+import { handleUnsplashSync } from './unsplash-sync';
 
 export default {
   async fetch(request, env, ctx) {
@@ -180,6 +181,10 @@ export default {
         return await handleAdminBatchCancel(request, env);
       }
 
+      if (path === '/api/admin/unsplash-sync' && request.method === 'POST') {
+        return await handleAdminUnsplashSyncManual(request, env);
+      }
+
       if (path.startsWith('/api/image-json/')) {
         const imageSlug = path.replace('/api/image-json/', '');
         return await handleGetImageJson(imageSlug, env);
@@ -214,6 +219,25 @@ export default {
   // 队列消费者
   async queue(batch, env) {
     return await handleQueue(batch, env);
+  },
+  
+  // 定时任务 - Unsplash 同步
+  async scheduled(event, env, ctx) {
+    console.log(`[Cron] Triggered at ${new Date(event.scheduledTime).toISOString()}`);
+    
+    try {
+      const result = await handleUnsplashSync(env);
+      console.log('[Cron] Unsplash sync result:', result);
+      
+      // 清理缓存（同步后刷新首页）
+      const cacheKeys = await env.CACHE.list({ prefix: 'images:' });
+      await Promise.all(cacheKeys.keys.map(key => env.CACHE.delete(key.name)));
+      
+      return result;
+    } catch (error) {
+      console.error('[Cron] Unsplash sync failed:', error);
+      return { success: false, error: error.message };
+    }
   }
 };
 
@@ -2181,6 +2205,38 @@ async function handleAdminBatchCancel(request, env) {
   } catch (error) {
     console.error('[BatchCancel] Error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 手动触发 Unsplash 同步
+async function handleAdminUnsplashSyncManual(request, env) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    console.log('[Admin] Manual Unsplash sync triggered');
+    const result = await handleUnsplashSync(env);
+    
+    // 清理缓存
+    const cacheKeys = await env.CACHE.list({ prefix: 'images:' });
+    await Promise.all(cacheKeys.keys.map(key => env.CACHE.delete(key.name)));
+    
+    return new Response(JSON.stringify(result), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('[Admin] Unsplash sync failed:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    }), {
       status: 500,
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
     });

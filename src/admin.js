@@ -589,7 +589,26 @@ export function buildAdminDashboard() {
           <h2>系统管理</h2>
         </div>
         <div style="padding: 30px;">
-          <h3 style="margin-bottom: 20px; color: #333;">数据清理</h3>
+          <h3 style="margin-bottom: 20px; color: #333;">🌐 Unsplash 同步</h3>
+          <p style="color: #666; margin-bottom: 20px;">从 Unsplash 自动同步最新的免费高质量图片</p>
+          
+          <div style="display: grid; gap: 15px; max-width: 500px; margin-bottom: 40px;">
+            <button class="btn" style="background: #667eea;" onclick="triggerUnsplashSync()">
+              🔄 立即同步 Unsplash 图片
+            </button>
+            <div style="background: #f8f9ff; padding: 15px; border-radius: 8px; font-size: 0.9rem; color: #666;">
+              <strong>说明：</strong>
+              <ul style="margin: 10px 0 0 20px; line-height: 1.8;">
+                <li>每次同步 10 张最新图片</li>
+                <li>自动 AI 分析和标签</li>
+                <li>重复图片自动跳过</li>
+                <li>每天凌晨 00:00 UTC 自动同步</li>
+              </ul>
+            </div>
+          </div>
+          <div id="unsplashSyncResult" style="display: none; padding: 15px; border-radius: 8px; margin-bottom: 20px;"></div>
+          
+          <h3 style="margin-bottom: 20px; color: #333;">🗑️ 数据清理</h3>
           <p style="color: #666; margin-bottom: 20px;">⚠️ 警告：以下操作不可逆，请谨慎操作！</p>
           
           <div style="display: grid; gap: 15px; max-width: 500px;">
@@ -929,6 +948,50 @@ export function buildAdminDashboard() {
     }
     
     // 系统清理
+    // Unsplash 同步功能
+    async function triggerUnsplashSync() {
+      const resultEl = document.getElementById('unsplashSyncResult');
+      resultEl.textContent = '正在同步 Unsplash 图片...';
+      resultEl.style.display = 'block';
+      resultEl.style.background = '#fff3cd';
+      resultEl.style.color = '#856404';
+      
+      try {
+        const result = await apiRequest('/api/admin/unsplash-sync', {
+          method: 'POST'
+        });
+        
+        if (result && result.success) {
+          resultEl.innerHTML = \`
+            <strong>✅ 同步成功！</strong><br>
+            <div style="margin-top: 10px; line-height: 1.8;">
+              • 处理: \${result.processed || 0} 张<br>
+              • 跳过: \${result.skipped || 0} 张（重复）<br>
+              • 失败: \${result.failed || 0} 张<br>
+              • 总计: \${result.total || 0} 张
+            </div>
+          \`;
+          resultEl.style.background = '#d4edda';
+          resultEl.style.color = '#155724';
+          
+          // 刷新统计和图片列表
+          setTimeout(() => {
+            loadStats();
+            loadImages(1);
+          }, 1000);
+        } else {
+          resultEl.textContent = '❌ 同步失败: ' + (result?.error || '未知错误');
+          resultEl.style.background = '#f8d7da';
+          resultEl.style.color = '#721c24';
+        }
+      } catch (error) {
+        console.error('Unsplash sync error:', error);
+        resultEl.textContent = '❌ 同步失败: ' + error.message;
+        resultEl.style.background = '#f8d7da';
+        resultEl.style.color = '#721c24';
+      }
+    }
+    
     async function cleanupR2() {
       if (!confirm('⚠️ 确定要清空所有 R2 图片存储吗？此操作不可逆！')) return;
       await performCleanup('r2');
