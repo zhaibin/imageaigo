@@ -668,49 +668,106 @@ h1, h2, h3 { color: white; }
   height: auto;
   display: block;
 }
-.image-info {
+.image-card-content {
   padding: 20px;
+  position: relative;
 }
-.image-info p {
+.like-button {
+  position: absolute;
+  top: -15px;
+  right: 10px;
+  background: white;
+  border: 2px solid #e74c3c;
+  border-radius: 50%;
+  width: 45px;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 1.3rem;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.like-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+.like-button.liked {
+  background: #e74c3c;
+  animation: likeAnimation 0.4s ease;
+}
+@keyframes likeAnimation {
+  0%, 100% { transform: scale(1); }
+  25% { transform: scale(1.3); }
+  50% { transform: scale(0.9); }
+  75% { transform: scale(1.1); }
+}
+.like-count {
+  position: absolute;
+  bottom: -8px;
+  right: -8px;
+  background: #667eea;
+  color: white;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+}
+.image-description {
   color: #333;
+  margin-bottom: 15px;
   line-height: 1.5;
-  margin-bottom: 10px;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.likes {
-  color: #e74c3c;
-  font-weight: 600;
-  font-size: 0.9rem;
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
 }
-.like-btn {
-  background: white;
-  border: 2px solid #e74c3c;
-  border-radius: 20px;
-  padding: 6px 14px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: all 0.3s;
-  font-size: 0.9rem;
-  color: #e74c3c;
-  font-weight: 600;
+.tag {
+  background: #f0f0f0;
+  color: #555;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  text-decoration: none;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
-.like-btn:hover {
+.tag:hover {
   transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
-.like-btn.liked {
-  background: #e74c3c;
+.tag.level-1 {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  font-weight: 600;
 }
-.like-count {
-  font-size: 0.85rem;
+.tag.level-1:hover {
+  box-shadow: 0 2px 12px rgba(102, 126, 234, 0.4);
+}
+.tag.level-2 {
+  background: #c7d2fe;
+  color: #4338ca;
+}
+.tag.level-2:hover {
+  background: #b4c6fc;
+}
+.tag.level-3 {
+  background: #e0e7ff;
+  color: #6366f1;
+}
+.tag.level-3:hover {
+  background: #c7d2fe;
 }
 /* 图片详情页响应式布局 */
 .image-detail-layout {

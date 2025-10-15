@@ -1296,10 +1296,13 @@ async function handleTagPage(request, env, tagName) {
       <a href="/image/${img.slug}">
         <img src="${img.image_url}" alt="${escapeHtml(img.description || tagName)}" loading="lazy"${img.width && img.height ? ` style="aspect-ratio: ${img.width} / ${img.height}"` : ''}>
       </a>
-      <div class="image-info">
-        <p>${escapeHtml(img.description || '')}</p>
+      <div class="image-card-content">
+        <div class="like-button" onclick="toggleLike(${img.id}, this, event)">
+          ❤️
+          <span class="like-count">${img.likes_count || 0}</span>
+        </div>
+        <p class="image-description">${escapeHtml(img.description || '')}</p>
         ${tagsHTML}
-        <div class="likes">❤️ ${img.likes_count || 0} likes</div>
       </div>
     </article>
     `;
@@ -1361,14 +1364,13 @@ async function handleCategoryPage(request, env, path) {
       <a href="/image/${img.slug}">
         <img src="${img.image_url}" alt="${escapeHtml(img.description || category)}" loading="lazy"${img.width && img.height ? ` style="aspect-ratio: ${img.width} / ${img.height}"` : ''}>
       </a>
-      <div class="image-info">
-        <p>${escapeHtml(img.description || '')}</p>
-        ${tagsHTML}
-        <div class="likes">
-          <button class="like-btn" onclick="toggleLike(${img.id}, this, event)" aria-label="Like this image">
-            ❤️ <span class="like-count">${img.likes_count || 0}</span>
-          </button>
+      <div class="image-card-content">
+        <div class="like-button" onclick="toggleLike(${img.id}, this, event)">
+          ❤️
+          <span class="like-count">${img.likes_count || 0}</span>
         </div>
+        <p class="image-description">${escapeHtml(img.description || '')}</p>
+        ${tagsHTML}
       </div>
     </article>
     `;
@@ -1456,21 +1458,32 @@ async function handleSearchPage(request, env) {
           
           link.appendChild(imgEl);
           
-          const info = document.createElement('div');
-          info.className = 'image-info';
+          const content = document.createElement('div');
+          content.className = 'image-card-content';
+          
+          // 点赞按钮（使用首页样式）
+          const likeButton = document.createElement('div');
+          likeButton.className = 'like-button';
+          likeButton.innerHTML = '❤️';
+          likeButton.onclick = (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            toggleLike(img.id, likeButton, e);
+          };
+          const likeCount = document.createElement('span');
+          likeCount.className = 'like-count';
+          likeCount.textContent = img.likes_count || 0;
+          likeButton.appendChild(likeCount);
           
           const desc = document.createElement('p');
+          desc.className = 'image-description';
           desc.textContent = img.description || '';
           
-          const likes = document.createElement('div');
-          likes.className = 'likes';
-          likes.innerHTML = '❤️ ' + (img.likes_count || 0) + ' likes';
-          
-          info.appendChild(desc);
-          info.appendChild(likes);
+          content.appendChild(likeButton);
+          content.appendChild(desc);
           
           card.appendChild(link);
-          card.appendChild(info);
+          card.appendChild(content);
           gallery.appendChild(card);
         });
         div.innerHTML = '';
