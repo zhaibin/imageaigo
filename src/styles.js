@@ -632,6 +632,8 @@ h1, h2, h3 { color: white; }
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
   width: 100%;
+  grid-auto-rows: auto;
+  align-items: start;
 }
 @media (max-width: 768px) {
   .gallery, .image-detail-container {
