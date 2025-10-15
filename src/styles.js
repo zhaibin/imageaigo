@@ -202,30 +202,10 @@ button:disabled {
 }
 
 .gallery {
-    columns: 4 280px;
-    column-gap: 20px;
+    position: relative;
     width: 100%;
-}
-
-@media (max-width: 768px) {
-    .gallery {
-        columns: 2 160px;
-        column-gap: 15px;
-    }
-}
-
-@media (min-width: 769px) and (max-width: 1024px) {
-    .gallery {
-        columns: 3 220px;
-        column-gap: 18px;
-    }
-}
-
-@media (min-width: 1400px) {
-    .gallery {
-        columns: 5 300px;
-        column-gap: 25px;
-    }
+    overflow: hidden;
+    /* JavaScript会动态设置height */
 }
 
 .image-card {
@@ -234,11 +214,9 @@ button:disabled {
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     cursor: pointer;
-    break-inside: avoid;
-    page-break-inside: avoid;
-    margin-bottom: 20px;
-    display: inline-block;
-    width: 100%;
+    position: absolute;
+    box-sizing: border-box;
+    /* width, left, top 由JavaScript设置 */
 }
 
 /* 已加载的卡片：正常悬停效果 */
@@ -260,12 +238,13 @@ button:disabled {
     width: 100%;
     height: auto;
     display: block;
-    object-fit: cover;
+    max-width: 100%;
 }
 
 .image-card-content {
     padding: 20px;
     position: relative;
+    box-sizing: border-box;
 }
 
 .like-button {
@@ -328,12 +307,15 @@ button:disabled {
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
+    word-break: break-word;
+    max-width: 100%;
 }
 
 .tags {
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
+    max-width: 100%;
 }
 
 .tag {
@@ -713,25 +695,25 @@ h1, h2, h3 { color: white; }
     height: 18px;
   }
 }
-.gallery, .image-detail-container {
+.gallery {
   columns: 4 280px;
   column-gap: 20px;
   width: 100%;
 }
 @media (max-width: 768px) {
-  .gallery, .image-detail-container {
+  .gallery {
     columns: 2 160px;
     column-gap: 15px;
   }
 }
 @media (min-width: 769px) and (max-width: 1024px) {
-  .gallery, .image-detail-container {
+  .gallery {
     columns: 3 220px;
     column-gap: 18px;
   }
 }
 @media (min-width: 1400px) {
-  .gallery, .image-detail-container {
+  .gallery {
     columns: 5 300px;
     column-gap: 25px;
   }
@@ -741,20 +723,14 @@ h1, h2, h3 { color: white; }
     border-radius: 15px;
     overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    transition: transform 0.3s, box-shadow 0.3s;
     cursor: pointer;
     break-inside: avoid;
     page-break-inside: avoid;
     margin-bottom: 20px;
     display: inline-block;
     width: 100%;
-}
-/* 已加载的卡片：正常悬停效果 */
-.image-card.card-loaded {
-    transition: transform 0.3s, box-shadow 0.3s;
-}
-/* 新卡片：使用Web Animations API控制 */
-.image-card.card-new {
-    will-change: opacity, transform;
+    box-sizing: border-box;
 }
 .image-card:hover { transform: translateY(-5px); }
 .image-card img {
