@@ -189,6 +189,11 @@ export default {
         return await handleAdminFixMissingTags(request, env);
       }
 
+      if (path.match(/^\/api\/admin\/image\/\d+\/reanalyze$/) && request.method === 'POST') {
+        const imageId = path.match(/\/api\/admin\/image\/(\d+)\/reanalyze$/)[1];
+        return await handleAdminReanalyzeImage(request, env, imageId);
+      }
+
       if (path.startsWith('/api/image-json/')) {
         const imageSlug = path.replace('/api/image-json/', '');
         return await handleGetImageJson(imageSlug, env);
@@ -1758,6 +1763,19 @@ async function handleAdminImages(request, env) {
     const hasMore = results.length > limit;
     const images = results.slice(0, limit);
     
+    // 为每张图片获取标签信息
+    for (let img of images) {
+      const { results: tagResults } = await env.DB.prepare(`
+        SELECT t.name, t.level, it.weight
+        FROM tags t JOIN image_tags it ON t.id = it.tag_id
+        WHERE it.image_id = ?
+        ORDER BY t.level, it.weight DESC
+        LIMIT 5
+      `).bind(img.id).all();
+      img.tags = tagResults;
+      img.tag_count = tagResults.length;
+    }
+    
     return new Response(JSON.stringify({
       images,
       page,
@@ -2287,6 +2305,123 @@ async function handleAdminUnsplashSyncManual(request, env) {
     return new Response(JSON.stringify({ 
       success: false, 
       error: error.message 
+    }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 重新分析单张图片
+async function handleAdminReanalyzeImage(request, env, imageId) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const id = parseInt(imageId);
+    console.log(`[ReanalyzeImage] Starting to reanalyze image ${id}`);
+    
+    // 获取图片信息
+    const image = await env.DB.prepare('SELECT * FROM images WHERE id = ?').bind(id).first();
+    
+    if (!image) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Image not found' 
+      }), {
+        status: 404,
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // 检查是否存储在R2
+    if (!image.image_url.startsWith('/r2/')) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Image not in R2 storage' 
+      }), {
+        status: 400,
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // 从R2获取图片数据
+    const r2Key = image.image_url.substring(4);
+    const r2Object = await env.R2.get(r2Key);
+    
+    if (!r2Object) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Image file not found in R2' 
+      }), {
+        status: 404,
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const imageData = await r2Object.arrayBuffer();
+    
+    // 使用 AI 重新分析
+    console.log(`[ReanalyzeImage] Analyzing image ${id} with AI...`);
+    const analysis = await analyzeImage(imageData, env.AI);
+    
+    if (!analysis || !analysis.tags) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'AI analysis failed or no tags generated' 
+      }), {
+        status: 500,
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // 更新描述
+    await env.DB.prepare('UPDATE images SET description = ? WHERE id = ?')
+      .bind(analysis.description, id).run();
+    
+    // 删除旧标签
+    await env.DB.prepare('DELETE FROM image_tags WHERE image_id = ?').bind(id).run();
+    
+    // 存储新标签
+    await storeTags(env.DB, id, analysis.tags);
+    
+    console.log(`[ReanalyzeImage] ✓ Image ${id} reanalyzed successfully`);
+    
+    // 清理相关缓存
+    const cacheKeys = await env.CACHE.list({ prefix: 'images:' });
+    await Promise.all(cacheKeys.keys.map(key => env.CACHE.delete(key.name)));
+    if (image.slug) {
+      await env.CACHE.delete(`image:${image.slug}`);
+      await env.CACHE.delete(`image:${image.id}`);
+    }
+    
+    // 获取新的标签信息
+    const { results: newTags } = await env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+    `).bind(id).all();
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Image reanalyzed successfully',
+      newDescription: analysis.description,
+      newTags: newTags,
+      tagCount: newTags.length
+    }), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('[ReanalyzeImage] Error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
     }), {
       status: 500,
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }

@@ -366,6 +366,13 @@ export function buildAdminDashboard() {
     .btn-danger:hover {
       background: #c0392b;
     }
+    .btn-warning {
+      background: #f39c12;
+      color: white;
+    }
+    .btn-warning:hover {
+      background: #d68910;
+    }
     .btn-small {
       padding: 6px 12px;
       font-size: 0.85rem;
@@ -380,6 +387,20 @@ export function buildAdminDashboard() {
       background: #e0e7ff;
       color: #4338ca;
       margin-right: 5px;
+      margin-bottom: 2px;
+    }
+    .tag.level-1 {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      font-weight: 600;
+    }
+    .tag.level-2 {
+      background: #c7d2fe;
+      color: #4338ca;
+    }
+    .tag.level-3 {
+      background: #e0e7ff;
+      color: #6366f1;
     }
     
     /* 加载动画 */
@@ -787,6 +808,7 @@ export function buildAdminDashboard() {
               <th>ID</th>
               <th>预览</th>
               <th>描述</th>
+              <th>标签</th>
               <th>尺寸</th>
               <th>点赞</th>
               <th>创建时间</th>
@@ -794,20 +816,39 @@ export function buildAdminDashboard() {
             </tr>
           </thead>
           <tbody>
-            \${data.images.map(img => \`
-              <tr>
+            \${data.images.map(img => {
+              const tagsHTML = img.tags && img.tags.length > 0 
+                ? img.tags.slice(0, 3).map(tag => \`<span class="tag level-\${tag.level}" title="\${escapeHtml(tag.name)}">\${escapeHtml(tag.name)}</span>\`).join('')
+                : '<span style="color: #999; font-size: 0.85rem;">无标签</span>';
+              
+              return \`
+              <tr id="image-row-\${img.id}">
                 <td>#\${img.id}</td>
                 <td><img src="\${img.image_url}" class="img-preview" onclick="showImageDetail(\${img.id})" /></td>
-                <td style="max-width: 300px;">\${escapeHtml(img.description || '-').substring(0, 100)}</td>
+                <td style="max-width: 230px;">\${escapeHtml(img.description || '-').substring(0, 70)}\${img.description && img.description.length > 70 ? '...' : ''}</td>
+                <td style="max-width: 180px;">
+                  <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                    \${tagsHTML}
+                    \${img.tag_count > 3 ? \`<span style="color: #999; font-size: 0.85rem;">+\${img.tag_count - 3}</span>\` : ''}
+                  </div>
+                </td>
                 <td>\${img.width && img.height ? \`\${img.width}×\${img.height}\` : '-'}</td>
                 <td>❤️ \${img.likes_count || 0}</td>
-                <td>\${new Date(img.created_at).toLocaleString('zh-CN')}</td>
+                <td style="font-size: 0.85rem;">\${new Date(img.created_at).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</td>
                 <td>
-                  <button class="btn btn-small btn-primary" onclick="viewImage('\${img.slug}')">查看</button>
-                  <button class="btn btn-small btn-danger" onclick="deleteImage(\${img.id})">删除</button>
+                  <div style="display: flex; flex-direction: column; gap: 5px;">
+                    <div>
+                      <button class="btn btn-small btn-primary" onclick="viewImage('\${img.slug}')">查看</button>
+                      <button class="btn btn-small btn-warning" onclick="reanalyzeImage(\${img.id})" title="重新分析并生成标签和描述">🔄</button>
+                    </div>
+                    <div>
+                      <button class="btn btn-small btn-danger" onclick="deleteImage(\${img.id})">删除</button>
+                    </div>
+                  </div>
                 </td>
               </tr>
-            \`).join('')}
+              \`;
+            }).join('')}
           </tbody>
         </table>
         <div class="pagination">
@@ -880,6 +921,31 @@ export function buildAdminDashboard() {
         alert('删除成功');
         loadImages(currentPage);
         loadStats();
+      }
+    }
+    
+    // 重新分析图片
+    async function reanalyzeImage(imageId) {
+      if (!confirm('确定要重新分析这张图片吗？\\n这将使用AI重新生成描述和标签。')) return;
+      
+      // 显示加载状态
+      const row = document.getElementById(\`image-row-\${imageId}\`);
+      const originalContent = row.innerHTML;
+      row.innerHTML = '<td colspan="8" style="text-align: center; padding: 20px;"><div class="spinner" style="margin: 0 auto;"></div><p>正在重新分析...</p></td>';
+      
+      try {
+        const result = await apiRequest(\`/api/admin/image/\${imageId}/reanalyze\`, { method: 'POST' });
+        
+        if (result && result.success) {
+          alert(\`重新分析成功！\\n\\n新描述: \${result.newDescription.substring(0, 100)}...\\n新标签数: \${result.tagCount} 个\`);
+          loadImages(currentPage);
+          loadStats();
+        } else {
+          throw new Error(result?.error || '重新分析失败');
+        }
+      } catch (error) {
+        row.innerHTML = originalContent;
+        alert('重新分析失败: ' + error.message);
       }
     }
     
