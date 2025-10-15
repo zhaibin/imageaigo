@@ -484,24 +484,52 @@ function getClientScript() {
             });
         }
         
-        // 更新该列的高度（需要等图片加载后才能获取准确高度）
-        const updateHeight = () => {
-            const cardHeight = card.offsetHeight;
-            columnHeights[columnIndex] = top + cardHeight + columnGap;
+        // 获取图片信息用于预估高度
+        const img = card.querySelector('img');
+        let estimatedHeight = 0;
+        
+        // 方法1：使用aspect-ratio预估高度
+        if (img && img.style.aspectRatio) {
+            const aspectRatio = img.style.aspectRatio.split('/').map(Number);
+            if (aspectRatio.length === 2 && aspectRatio[0] && aspectRatio[1]) {
+                const ratio = aspectRatio[1] / aspectRatio[0];
+                estimatedHeight = columnWidth * ratio;
+            }
+        }
+        
+        // 方法2：使用默认高度预估（如果没有aspect-ratio）
+        if (!estimatedHeight) {
+            estimatedHeight = columnWidth * 0.75; // 默认4:3比例
+        }
+        
+        // 加上内容区域的估计高度（描述+标签+padding）
+        const contentPadding = 40; // 上下padding各20px
+        const descriptionHeight = 60; // 估计3行文字高度
+        const tagsHeight = 30; // 估计标签高度
+        estimatedHeight += contentPadding + descriptionHeight + tagsHeight;
+        
+        // 立即使用预估高度更新列高度，避免卡片重叠
+        columnHeights[columnIndex] = top + estimatedHeight + columnGap;
+        updateGalleryHeight();
+        
+        // 图片加载完成后更新为实际高度
+        const updateActualHeight = () => {
+            const actualHeight = card.offsetHeight;
+            // 重新计算该列高度（使用实际高度）
+            columnHeights[columnIndex] = top + actualHeight + columnGap;
             updateGalleryHeight();
         };
         
         // 等待图片加载
-        const img = card.querySelector('img');
         if (img) {
             if (img.complete) {
-                updateHeight();
+                updateActualHeight();
             } else {
-                img.addEventListener('load', updateHeight);
-                img.addEventListener('error', updateHeight);
+                img.addEventListener('load', updateActualHeight);
+                img.addEventListener('error', updateActualHeight);
             }
         } else {
-            updateHeight();
+            updateActualHeight();
         }
     }
     
