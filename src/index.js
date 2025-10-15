@@ -171,6 +171,10 @@ export default {
         return await handleAdminBatchUpload(request, env, ctx);
       }
 
+      if (path === '/api/admin/batch-status' && request.method === 'GET') {
+        return await handleAdminBatchStatus(request, env);
+      }
+
       if (path.startsWith('/api/image-json/')) {
         const imageSlug = path.replace('/api/image-json/', '');
         return await handleGetImageJson(imageSlug, env);
@@ -1921,13 +1925,30 @@ async function handleAdminBatchUpload(request, env, ctx) {
       });
     }
     
-    console.log(`[BatchUpload] Received ${files.length} files`);
+    // 生成批次ID
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    console.log(`[BatchUpload] Received ${files.length} files, batchId: ${batchId}`);
+    
+    // 初始化批次状态到 KV
+    const batchStatus = {
+      batchId,
+      total: files.length,
+      completed: 0,
+      failed: 0,
+      processing: 0,
+      status: 'processing',
+      startTime: Date.now(),
+      files: files.map(f => ({ name: f.name, status: 'pending' }))
+    };
+    
+    await env.CACHE.put(`batch:${batchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 }); // 1小时过期
     
     // 立即返回响应，避免超时
     const response = new Response(JSON.stringify({
       success: true,
       message: `Batch upload started for ${files.length} images`,
       count: files.length,
+      batchId,
       status: 'processing'
     }), {
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
@@ -1935,10 +1956,10 @@ async function handleAdminBatchUpload(request, env, ctx) {
     
     // 异步处理图片（使用 waitUntil）
     if (ctx && ctx.waitUntil) {
-      ctx.waitUntil(processBatchUpload(files, env));
+      ctx.waitUntil(processBatchUpload(files, env, batchId));
     } else {
       // 如果没有 ctx，则同步处理（开发环境）
-      processBatchUpload(files, env).catch(err => 
+      processBatchUpload(files, env, batchId).catch(err => 
         console.error('[BatchUpload] Background processing failed:', err)
       );
     }
@@ -1954,19 +1975,23 @@ async function handleAdminBatchUpload(request, env, ctx) {
 }
 
 // 批量上传后台处理
-async function processBatchUpload(files, env) {
-  console.log(`[BatchProcess] Starting to process ${files.length} files`);
+async function processBatchUpload(files, env, batchId) {
+  console.log(`[BatchProcess:${batchId}] Starting to process ${files.length} files`);
   
   for (let i = 0; i < files.length; i++) {
     const file = files[i];
-    console.log(`[BatchProcess] Processing file ${i + 1}/${files.length}: ${file.name}`);
+    console.log(`[BatchProcess:${batchId}] Processing file ${i + 1}/${files.length}: ${file.name}`);
+    
+    // 更新状态：正在处理
+    await updateBatchStatus(env, batchId, i, 'processing');
     
     try {
       const imageData = await file.arrayBuffer();
       
       // 检查大小
       if (imageData.byteLength > 20 * 1024 * 1024) {
-        console.warn(`[BatchProcess] File ${file.name} too large, skipping`);
+        console.warn(`[BatchProcess:${batchId}] File ${file.name} too large, skipping`);
+        await updateBatchStatus(env, batchId, i, 'failed', 'File too large (>20MB)');
         continue;
       }
       
@@ -1976,7 +2001,8 @@ async function processBatchUpload(files, env) {
       // 检查是否已存在
       const existing = await env.DB.prepare('SELECT id FROM images WHERE image_hash = ?').bind(imageHash).first();
       if (existing) {
-        console.log(`[BatchProcess] File ${file.name} already exists, skipping`);
+        console.log(`[BatchProcess:${batchId}] File ${file.name} already exists, skipping`);
+        await updateBatchStatus(env, batchId, i, 'skipped', 'Image already exists');
         continue;
       }
       
@@ -2007,17 +2033,106 @@ async function processBatchUpload(files, env) {
       // 存储到数据库
       const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis);
       
-      console.log(`[BatchProcess] File ${file.name} processed successfully: ${slug}`);
+      console.log(`[BatchProcess:${batchId}] File ${file.name} processed successfully: ${slug}`);
+      
+      // 更新状态：完成
+      await updateBatchStatus(env, batchId, i, 'completed');
       
       // 添加延迟避免过快
       await new Promise(resolve => setTimeout(resolve, 1000));
       
     } catch (error) {
-      console.error(`[BatchProcess] Failed to process ${file.name}:`, error.message);
+      console.error(`[BatchProcess:${batchId}] Failed to process ${file.name}:`, error.message);
+      await updateBatchStatus(env, batchId, i, 'failed', error.message);
       // 继续处理下一个文件
     }
   }
   
-  console.log(`[BatchProcess] Completed processing ${files.length} files`);
+  // 标记批次完成
+  await finalizeBatchStatus(env, batchId);
+  console.log(`[BatchProcess:${batchId}] Completed processing ${files.length} files`);
+}
+
+// 更新批次状态
+async function updateBatchStatus(env, batchId, fileIndex, status, error = null) {
+  try {
+    const statusKey = `batch:${batchId}`;
+    const currentStatus = await env.CACHE.get(statusKey);
+    
+    if (!currentStatus) return;
+    
+    const batchStatus = JSON.parse(currentStatus);
+    batchStatus.files[fileIndex].status = status;
+    if (error) {
+      batchStatus.files[fileIndex].error = error;
+    }
+    
+    // 更新计数
+    batchStatus.completed = batchStatus.files.filter(f => f.status === 'completed').length;
+    batchStatus.failed = batchStatus.files.filter(f => f.status === 'failed').length;
+    batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
+    
+    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+  } catch (err) {
+    console.error(`[UpdateBatchStatus] Error:`, err);
+  }
+}
+
+// 完成批次状态
+async function finalizeBatchStatus(env, batchId) {
+  try {
+    const statusKey = `batch:${batchId}`;
+    const currentStatus = await env.CACHE.get(statusKey);
+    
+    if (!currentStatus) return;
+    
+    const batchStatus = JSON.parse(currentStatus);
+    batchStatus.status = 'completed';
+    batchStatus.endTime = Date.now();
+    batchStatus.duration = batchStatus.endTime - batchStatus.startTime;
+    
+    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+  } catch (err) {
+    console.error(`[FinalizeBatchStatus] Error:`, err);
+  }
+}
+
+// 查询批次状态
+async function handleAdminBatchStatus(request, env) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    // 获取所有批次状态
+    const batchKeys = await env.CACHE.list({ prefix: 'batch:' });
+    const batches = [];
+    
+    for (const key of batchKeys.keys) {
+      const statusData = await env.CACHE.get(key.name);
+      if (statusData) {
+        batches.push(JSON.parse(statusData));
+      }
+    }
+    
+    // 按开始时间排序（最新的在前）
+    batches.sort((a, b) => b.startTime - a.startTime);
+    
+    return new Response(JSON.stringify({
+      success: true,
+      batches: batches.filter(b => b.status === 'processing') // 只返回进行中的任务
+    }), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('[BatchStatus] Error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
 }
 

@@ -625,6 +625,21 @@ export function buildAdminDashboard() {
   </div>
   
   <!-- 批量上传模态框 -->
+  <!-- 批量处理进度监控 -->
+  <div id="batchProgressPanel" style="position: fixed; top: 80px; right: 20px; width: 350px; background: white; border-radius: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15); z-index: 9999; display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #eee; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0; color: white; cursor: pointer;" onclick="toggleProgressPanel()">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 1.2rem;">⚙️</span>
+        <span style="font-weight: 600;">处理任务</span>
+        <span id="taskCountBadge" style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.85rem;">0</span>
+      </div>
+      <span id="panelToggleIcon">▼</span>
+    </div>
+    <div id="progressPanelContent" style="max-height: 400px; overflow-y: auto;">
+      <!-- 进度内容会动态插入这里 -->
+    </div>
+  </div>
+
   <div id="batchUploadModal" class="modal">
     <div class="modal-content" style="max-width: 600px;">
       <div class="modal-header">
@@ -1035,6 +1050,8 @@ export function buildAdminDashboard() {
     // 批量上传功能
     let batchFiles = [];
     let isUploading = false;
+    let progressPollInterval = null;
+    let isPanelCollapsed = false;
     
     function showBatchUpload() {
       batchFiles = [];
@@ -1194,6 +1211,9 @@ export function buildAdminDashboard() {
           // 显示关闭按钮
           closeProgressBtn.style.display = 'inline-block';
           
+          // 开始监控进度
+          startProgressMonitoring();
+          
           // 10秒后自动关闭（给用户足够时间看到消息）
           setTimeout(() => {
             if (isUploading) {
@@ -1215,6 +1235,102 @@ export function buildAdminDashboard() {
         uploadBtn.disabled = false;
       }
     }
+    
+    // 进度监控相关函数
+    function startProgressMonitoring() {
+      if (progressPollInterval) return; // 避免重复启动
+      
+      // 立即查询一次
+      updateProgressPanel();
+      
+      // 每5秒轮询一次
+      progressPollInterval = setInterval(updateProgressPanel, 5000);
+    }
+    
+    function stopProgressMonitoring() {
+      if (progressPollInterval) {
+        clearInterval(progressPollInterval);
+        progressPollInterval = null;
+      }
+    }
+    
+    async function updateProgressPanel() {
+      try {
+        const result = await apiRequest('/api/admin/batch-status');
+        
+        if (result && result.batches && result.batches.length > 0) {
+          // 显示进度面板
+          document.getElementById('batchProgressPanel').style.display = 'block';
+          document.getElementById('taskCountBadge').textContent = result.batches.length;
+          
+          // 渲染进度内容
+          const content = result.batches.map(batch => renderBatchProgress(batch)).join('');
+          document.getElementById('progressPanelContent').innerHTML = content;
+        } else {
+          // 没有进行中的任务，隐藏面板并停止轮询
+          document.getElementById('batchProgressPanel').style.display = 'none';
+          stopProgressMonitoring();
+        }
+      } catch (error) {
+        console.error('Failed to update progress:', error);
+      }
+    }
+    
+    function renderBatchProgress(batch) {
+      const progress = batch.total > 0 ? Math.round((batch.completed / batch.total) * 100) : 0;
+      const elapsedTime = Math.round((Date.now() - batch.startTime) / 1000);
+      const minutes = Math.floor(elapsedTime / 60);
+      const seconds = elapsedTime % 60;
+      
+      return \`
+        <div style="padding: 15px; border-bottom: 1px solid #eee;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="font-weight: 600; color: #333; font-size: 0.9rem;">
+              批次 #\${batch.batchId.split('_')[1]}
+            </div>
+            <div style="color: #666; font-size: 0.85rem;">
+              \${minutes}:\${seconds.toString().padStart(2, '0')}
+            </div>
+          </div>
+          
+          <div style="margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666; margin-bottom: 5px;">
+              <span>\${batch.completed} / \${batch.total}</span>
+              <span>\${progress}%</span>
+            </div>
+            <div style="width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden;">
+              <div style="width: \${progress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 15px; font-size: 0.8rem; color: #666;">
+            <span>✅ \${batch.completed}</span>
+            \${batch.failed > 0 ? \`<span style="color: #e74c3c;">❌ \${batch.failed}</span>\` : ''}
+            \${batch.processing > 0 ? \`<span style="color: #667eea;">⚙️ \${batch.processing}</span>\` : ''}
+          </div>
+        </div>
+      \`;
+    }
+    
+    function toggleProgressPanel() {
+      const content = document.getElementById('progressPanelContent');
+      const icon = document.getElementById('panelToggleIcon');
+      
+      isPanelCollapsed = !isPanelCollapsed;
+      
+      if (isPanelCollapsed) {
+        content.style.display = 'none';
+        icon.textContent = '▶';
+      } else {
+        content.style.display = 'block';
+        icon.textContent = '▼';
+      }
+    }
+    
+    // 页面加载时检查是否有进行中的任务
+    window.addEventListener('DOMContentLoaded', () => {
+      startProgressMonitoring();
+    });
     
     // 页面关闭保护
     window.addEventListener('beforeunload', (e) => {
