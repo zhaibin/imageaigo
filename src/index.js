@@ -1987,95 +1987,35 @@ async function processBatchUpload(files, env, batchId) {
     }
     
     const file = files[i];
+    const fileStartTime = Date.now();
     console.log(`[BatchProcess:${batchId}] Processing file ${i + 1}/${files.length}: ${file.name}`);
     
     // 更新状态：正在处理（包含当前文件名和活动时间）
     await updateBatchStatus(env, batchId, i, 'processing', null, file.name);
     
     try {
-      const imageData = await file.arrayBuffer();
+      // 为整个文件处理添加总超时（120秒）
+      const processResult = await Promise.race([
+        processImageFile(file, env, batchId, i),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('File processing timeout (120s)')), 120000)
+        )
+      ]);
       
-      // 检查大小
-      if (imageData.byteLength > 20 * 1024 * 1024) {
-        console.warn(`[BatchProcess:${batchId}] File ${file.name} too large, skipping`);
-        await updateBatchStatus(env, batchId, i, 'failed', 'File too large (>20MB)');
-        continue;
+      if (processResult.status === 'completed') {
+        console.log(`[BatchProcess:${batchId}] File ${file.name} processed successfully in ${Date.now() - fileStartTime}ms`);
+        await updateBatchStatus(env, batchId, i, 'completed');
+      } else if (processResult.status === 'skipped') {
+        console.log(`[BatchProcess:${batchId}] File ${file.name} skipped: ${processResult.reason}`);
+        await updateBatchStatus(env, batchId, i, 'skipped', processResult.reason);
       }
-      
-      // 生成哈希
-      const imageHash = await generateHash(imageData);
-      
-      // 检查是否已存在
-      const existing = await env.DB.prepare('SELECT id FROM images WHERE image_hash = ?').bind(imageHash).first();
-      if (existing) {
-        console.log(`[BatchProcess:${batchId}] File ${file.name} already exists, skipping`);
-        await updateBatchStatus(env, batchId, i, 'skipped', 'Image already exists');
-        continue;
-      }
-      
-      // 上传到 R2
-      const timestamp = Date.now();
-      const randomStr = Math.random().toString(36).substring(2, 8);
-      const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
-      
-      await env.R2.put(r2Key, imageData, {
-        httpMetadata: { contentType: file.type || 'image/jpeg', cacheControl: 'public, max-age=31536000' },
-        customMetadata: {
-          uploadedAt: new Date().toISOString(),
-          hash: imageHash,
-          sourceUrl: 'batch-upload',
-          originalName: file.name
-        }
-      });
-      
-      const finalUrl = `/r2/${r2Key}`;
-      
-      // 获取图片尺寸
-      const dimensions = await getImageDimensions(imageData);
-      
-      // AI 分析（带重试逻辑）
-      let analysis = null;
-      let lastError = null;
-      const maxRetries = 3;
-      
-      for (let retry = 0; retry < maxRetries; retry++) {
-        try {
-          if (retry > 0) {
-            console.log(`[BatchProcess:${batchId}] Retry ${retry}/${maxRetries} for ${file.name}`);
-            await new Promise(resolve => setTimeout(resolve, 2000 * retry)); // 递增延迟
-          }
-          
-          analysis = await analyzeImage(imageData, env.AI);
-          analysis.dimensions = dimensions;
-          break; // 成功则跳出重试循环
-        } catch (err) {
-          lastError = err;
-          console.warn(`[BatchProcess:${batchId}] AI analysis failed (attempt ${retry + 1}/${maxRetries}):`, err.message);
-          
-          if (retry === maxRetries - 1) {
-            // 最后一次重试失败
-            throw new Error(`AI analysis failed after ${maxRetries} retries: ${err.message}`);
-          }
-        }
-      }
-      
-      if (!analysis) {
-        throw new Error('AI analysis returned null');
-      }
-      
-      // 存储到数据库
-      const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis);
-      
-      console.log(`[BatchProcess:${batchId}] File ${file.name} processed successfully: ${slug}`);
-      
-      // 更新状态：完成
-      await updateBatchStatus(env, batchId, i, 'completed');
       
       // 添加延迟避免过快
       await new Promise(resolve => setTimeout(resolve, 1000));
       
     } catch (error) {
-      console.error(`[BatchProcess:${batchId}] Failed to process ${file.name}:`, error.message);
+      const duration = Date.now() - fileStartTime;
+      console.error(`[BatchProcess:${batchId}] Failed to process ${file.name} after ${duration}ms:`, error.message);
       await updateBatchStatus(env, batchId, i, 'failed', error.message);
       // 继续处理下一个文件
     }
@@ -2084,6 +2024,110 @@ async function processBatchUpload(files, env, batchId) {
   // 标记批次完成
   await finalizeBatchStatus(env, batchId);
   console.log(`[BatchProcess:${batchId}] Completed processing ${files.length} files`);
+}
+
+// 处理单个图片文件（带详细步骤和超时保护）
+async function processImageFile(file, env, batchId, fileIndex) {
+  try {
+    // 步骤1: 读取文件数据（10秒超时）
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 1: Reading file data`);
+    const imageData = await Promise.race([
+      file.arrayBuffer(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('File read timeout')), 10000)
+      )
+    ]);
+    
+    // 检查大小
+    if (imageData.byteLength > 20 * 1024 * 1024) {
+      return { status: 'skipped', reason: 'File too large (>20MB)' };
+    }
+    
+    // 步骤2: 生成哈希（5秒超时）
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 2: Generating hash`);
+    const imageHash = await Promise.race([
+      generateHash(imageData),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Hash generation timeout')), 5000)
+      )
+    ]);
+    
+    // 步骤3: 检查重复（5秒超时）
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 3: Checking duplicates`);
+    const existing = await Promise.race([
+      env.DB.prepare('SELECT id FROM images WHERE image_hash = ?').bind(imageHash).first(),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database query timeout')), 5000)
+      )
+    ]);
+    
+    if (existing) {
+      return { status: 'skipped', reason: 'Image already exists' };
+    }
+    
+    // 步骤4: 上传到 R2（30秒超时）
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 4: Uploading to R2`);
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
+    
+    await Promise.race([
+      env.R2.put(r2Key, imageData, {
+        httpMetadata: { contentType: file.type || 'image/jpeg', cacheControl: 'public, max-age=31536000' },
+        customMetadata: {
+          uploadedAt: new Date().toISOString(),
+          hash: imageHash,
+          sourceUrl: 'batch-upload',
+          originalName: file.name
+        }
+      }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('R2 upload timeout')), 30000)
+      )
+    ]);
+    
+    const finalUrl = `/r2/${r2Key}`;
+    
+    // 步骤5: 获取图片尺寸（5秒超时）
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 5: Getting image dimensions`);
+    const dimensions = await Promise.race([
+      getImageDimensions(imageData),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Get dimensions timeout')), 5000)
+      )
+    ]);
+    
+    // 步骤6: AI 分析（60秒超时，analyzeImage内部已有重试）
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 6: AI analysis`);
+    const analysis = await Promise.race([
+      analyzeImage(imageData, env.AI),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI analysis timeout (60s)')), 60000)
+      )
+    ]);
+    
+    if (!analysis) {
+      throw new Error('AI analysis returned null');
+    }
+    
+    analysis.dimensions = dimensions;
+    
+    // 步骤7: 存储到数据库（10秒超时）
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 7: Storing to database`);
+    const { imageId, slug } = await Promise.race([
+      storeImageAnalysis(env.DB, finalUrl, imageHash, analysis),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database storage timeout')), 10000)
+      )
+    ]);
+    
+    console.log(`[BatchProcess:${batchId}:${fileIndex}] Success: ${slug}`);
+    return { status: 'completed', imageId, slug };
+    
+  } catch (error) {
+    console.error(`[BatchProcess:${batchId}:${fileIndex}] Error:`, error.message);
+    throw error;
+  }
 }
 
 // 检查批次是否应该继续处理
