@@ -1,7 +1,7 @@
 // Unsplash 自动同步模块（使用队列）
 import { generateHash } from './utils.js';
 
-// Cron 触发器 - 每天同步一次 Unsplash 最新图片
+// Cron 触发器 - 每天同步一次 Unsplash 随机图片
 export async function handleUnsplashSync(env) {
   console.log('[UnsplashSync] Starting daily Unsplash sync');
   
@@ -13,24 +13,43 @@ export async function handleUnsplashSync(env) {
   }
   
   try {
-    // 获取最新的高质量图片（每天10张）
-    const perPage = 10;
-    const response = await fetch(
-      `https://api.unsplash.com/photos?page=1&per_page=${perPage}&order_by=latest`,
-      {
-        headers: {
-          'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
-        }
-      }
-    );
+    // 获取50张随机高质量图片
+    // 注意：Unsplash API的random端点一次最多返回30张，所以我们分2次请求
+    const count = 50;
+    const photosPerRequest = 30;
+    const requests = Math.ceil(count / photosPerRequest);
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Unsplash API error: ${response.status} - ${errorText}`);
+    let allPhotos = [];
+    
+    for (let i = 0; i < requests; i++) {
+      const requestCount = Math.min(photosPerRequest, count - allPhotos.length);
+      console.log(`[UnsplashSync] Fetching batch ${i + 1}/${requests} (${requestCount} photos)`);
+      
+      const response = await fetch(
+        `https://api.unsplash.com/photos/random?count=${requestCount}&orientation=landscape`,
+        {
+          headers: {
+            'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Unsplash API error: ${response.status} - ${errorText}`);
+      }
+      
+      const batchPhotos = await response.json();
+      allPhotos = allPhotos.concat(batchPhotos);
+      
+      // 避免API限流，批次之间稍微延迟
+      if (i < requests - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
     }
     
-    const photos = await response.json();
-    console.log(`[UnsplashSync] Fetched ${photos.length} photos from Unsplash`);
+    const photos = allPhotos;
+    console.log(`[UnsplashSync] Fetched ${photos.length} random photos from Unsplash`);
     
     // 生成同步批次ID
     const syncBatchId = `unsplash_${Date.now()}`;
