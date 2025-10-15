@@ -185,6 +185,10 @@ export default {
         return await handleAdminUnsplashSyncManual(request, env);
       }
 
+      if (path === '/api/admin/fix-tags' && request.method === 'POST') {
+        return await handleAdminFixMissingTags(request, env);
+      }
+
       if (path.startsWith('/api/image-json/')) {
         const imageSlug = path.replace('/api/image-json/', '');
         return await handleGetImageJson(imageSlug, env);
@@ -2283,6 +2287,129 @@ async function handleAdminUnsplashSyncManual(request, env) {
     return new Response(JSON.stringify({ 
       success: false, 
       error: error.message 
+    }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 修复缺失标签的图片
+async function handleAdminFixMissingTags(request, env) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const { dryRun = false } = await request.json().catch(() => ({}));
+    
+    console.log('[FixTags] Starting to fix missing tags... (dryRun:', dryRun, ')');
+    
+    // 查找所有没有标签的图片
+    const { results: images } = await env.DB.prepare(`
+      SELECT i.id, i.image_url, i.image_hash, i.description
+      FROM images i
+      WHERE (SELECT COUNT(*) FROM image_tags WHERE image_id = i.id) = 0
+      ORDER BY i.id
+    `).all();
+    
+    console.log(`[FixTags] Found ${images.length} images without tags`);
+    
+    if (dryRun) {
+      return new Response(JSON.stringify({
+        success: true,
+        dryRun: true,
+        imagesFound: images.length,
+        images: images.map(img => ({
+          id: img.id,
+          url: img.image_url,
+          description: img.description?.substring(0, 60) + '...'
+        }))
+      }, null, 2), {
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    let processed = 0;
+    let failed = 0;
+    const errors = [];
+    
+    // 逐个处理图片
+    for (const image of images) {
+      try {
+        console.log(`[FixTags] Processing image ${image.id}: ${image.description?.substring(0, 50)}`);
+        
+        // 从R2获取图片数据
+        if (!image.image_url.startsWith('/r2/')) {
+          console.warn(`[FixTags] Skipping image ${image.id}: not in R2 storage`);
+          continue;
+        }
+        
+        const r2Key = image.image_url.substring(4);
+        const r2Object = await env.R2.get(r2Key);
+        
+        if (!r2Object) {
+          throw new Error('Image not found in R2');
+        }
+        
+        const imageData = await r2Object.arrayBuffer();
+        
+        // 使用 AI 重新分析
+        const analysis = await analyzeImage(imageData, env.AI);
+        
+        if (!analysis || !analysis.tags) {
+          throw new Error('AI analysis failed or no tags generated');
+        }
+        
+        console.log(`[FixTags] Generated tags for image ${image.id}`);
+        
+        // 存储标签
+        await storeTags(env.DB, image.id, analysis.tags);
+        
+        processed++;
+        console.log(`[FixTags] ✓ Image ${image.id} processed successfully`);
+        
+        // 每5张图片休息一下，避免API限流
+        if (processed % 5 === 0) {
+          console.log(`[FixTags] Processed ${processed}/${images.length}, pausing...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+      } catch (error) {
+        failed++;
+        console.error(`[FixTags] ✗ Failed to process image ${image.id}:`, error.message);
+        errors.push({
+          id: image.id,
+          error: error.message
+        });
+      }
+    }
+    
+    console.log(`[FixTags] Complete: ${processed} processed, ${failed} failed`);
+    
+    // 清理缓存
+    console.log('[FixTags] Clearing cache...');
+    const cacheKeys = await env.CACHE.list({ prefix: 'images:' });
+    await Promise.all(cacheKeys.keys.map(key => env.CACHE.delete(key.name)));
+    
+    return new Response(JSON.stringify({
+      success: true,
+      total: images.length,
+      processed,
+      failed,
+      errors: errors.length > 0 ? errors : undefined
+    }, null, 2), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('[FixTags] Error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
     }), {
       status: 500,
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
