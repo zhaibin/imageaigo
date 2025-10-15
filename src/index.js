@@ -7,6 +7,7 @@ import { escapeHtml } from './templates';
 import { generateSlug, generateTagSlug } from './slug-generator';
 import { buildAdminLoginPage, buildAdminDashboard } from './admin';
 import { buildFooter } from './footer-template';
+import { handleQueue } from './queue-handler';
 
 export default {
   async fetch(request, env, ctx) {
@@ -208,6 +209,11 @@ export default {
         console.warn(`[${requestId}] Slow request: ${duration}ms`);
       }
     }
+  },
+  
+  // 队列消费者
+  async queue(batch, env) {
+    return await handleQueue(batch, env);
   }
 };
 
@@ -1932,19 +1938,80 @@ async function handleAdminBatchUpload(request, env, ctx) {
       total: files.length,
       completed: 0,
       failed: 0,
-      skipped: 0,  // 重复跳过
+      skipped: 0,
       processing: 0,
       status: 'processing',
       startTime: Date.now(),
-      lastActivity: Date.now(),  // 最后活动时间
-      currentFile: '',  // 当前处理的文件
+      lastActivity: Date.now(),
+      currentFile: '',
       files: files.map(f => ({ name: f.name, status: 'pending' }))
     };
     
-    await env.CACHE.put(`batch:${batchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 }); // 1小时过期
+    await env.CACHE.put(`batch:${batchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 });
     
-    // 立即返回响应，避免超时
-    const response = new Response(JSON.stringify({
+    // 快速预处理：检查重复 + 上传到临时存储 + 发送到队列
+    const preprocessPromises = files.map(async (file, index) => {
+      try {
+        console.log(`[BatchUpload:${batchId}:${index}] Preprocessing ${file.name}`);
+        
+        // 读取文件数据
+        const imageData = await file.arrayBuffer();
+        
+        // 检查大小
+        if (imageData.byteLength > 20 * 1024 * 1024) {
+          await updateBatchStatus(env, batchId, index, 'failed', 'File too large (>20MB)', file.name);
+          return;
+        }
+        
+        // 生成哈希
+        const imageHash = await generateHash(imageData);
+        
+        // 检查是否已存在
+        const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?')
+          .bind(imageHash).first();
+        
+        if (existing) {
+          console.log(`[BatchUpload:${batchId}:${index}] Duplicate found: ${existing.slug}`);
+          await updateBatchStatus(env, batchId, index, 'skipped', `Duplicate of ${existing.slug}`, file.name);
+          return;
+        }
+        
+        // 上传到临时存储（用于队列处理）
+        const tempKey = `temp/${batchId}/${index}`;
+        await env.R2.put(tempKey, imageData, {
+          httpMetadata: { contentType: file.type || 'image/jpeg' },
+          customMetadata: {
+            hash: imageHash,
+            fileName: file.name,
+            batchId: batchId,
+            fileIndex: index.toString()
+          }
+        });
+        
+        // 发送消息到队列
+        await env.IMAGE_QUEUE.send({
+          batchId,
+          fileIndex: index,
+          fileName: file.name,
+          imageHash,
+          contentType: file.type || 'image/jpeg'
+        });
+        
+        console.log(`[BatchUpload:${batchId}:${index}] Queued for processing`);
+        
+      } catch (error) {
+        console.error(`[BatchUpload:${batchId}:${index}] Preprocessing failed:`, error.message);
+        await updateBatchStatus(env, batchId, index, 'failed', error.message, file.name);
+      }
+    });
+    
+    // 使用 waitUntil 确保预处理完成
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(Promise.all(preprocessPromises));
+    }
+    
+    // 立即返回响应
+    return new Response(JSON.stringify({
       success: true,
       message: `Batch upload started for ${files.length} images`,
       count: files.length,
@@ -1954,190 +2021,12 @@ async function handleAdminBatchUpload(request, env, ctx) {
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
     });
     
-    // 异步处理图片（使用 waitUntil）
-    if (ctx && ctx.waitUntil) {
-      ctx.waitUntil(processBatchUpload(files, env, batchId));
-    } else {
-      // 如果没有 ctx，则同步处理（开发环境）
-      processBatchUpload(files, env, batchId).catch(err => 
-        console.error('[BatchUpload] Background processing failed:', err)
-      );
-    }
-    
-    return response;
   } catch (error) {
     console.error('[BatchUpload] Error:', error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
     });
-  }
-}
-
-// 批量上传后台处理（并发版本）
-async function processBatchUpload(files, env, batchId) {
-  console.log(`[BatchProcess:${batchId}] Starting to process ${files.length} files with concurrency`);
-  
-  // 第一步：快速检查所有文件的重复性（并发）
-  console.log(`[BatchProcess:${batchId}] Step 1: Quick duplicate check for all files`);
-  const duplicateCheckResults = await Promise.all(
-    files.map(async (file, index) => {
-      try {
-        const imageData = await file.arrayBuffer();
-        const imageHash = await generateHash(imageData);
-        const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?').bind(imageHash).first();
-        return {
-          index,
-          file,
-          imageData,
-          imageHash,
-          isDuplicate: !!existing,
-          existingSlug: existing?.slug
-        };
-      } catch (error) {
-        console.error(`[BatchProcess:${batchId}] Failed to check ${file.name}:`, error.message);
-        return {
-          index,
-          file,
-          error: error.message
-        };
-      }
-    })
-  );
-  
-  // 更新重复文件的状态
-  for (const result of duplicateCheckResults) {
-    if (result.isDuplicate) {
-      console.log(`[BatchProcess:${batchId}] File ${result.file.name} is duplicate (${result.existingSlug}), skipping`);
-      await updateBatchStatus(env, batchId, result.index, 'skipped', `Duplicate of ${result.existingSlug}`, result.file.name);
-    } else if (result.error) {
-      await updateBatchStatus(env, batchId, result.index, 'failed', result.error, result.file.name);
-    }
-  }
-  
-  // 第二步：并发处理非重复的文件（每次3张并发）
-  const toProcess = duplicateCheckResults.filter(r => !r.isDuplicate && !r.error);
-  console.log(`[BatchProcess:${batchId}] Step 2: Processing ${toProcess.length} unique files (3 concurrent)`);
-  
-  const concurrency = 3; // 并发数
-  for (let i = 0; i < toProcess.length; i += concurrency) {
-    // 检查批次是否被取消
-    const shouldContinue = await checkBatchStatus(env, batchId);
-    if (!shouldContinue) {
-      console.log(`[BatchProcess:${batchId}] Batch cancelled by user, stopping...`);
-      break;
-    }
-    
-    const batch = toProcess.slice(i, i + concurrency);
-    console.log(`[BatchProcess:${batchId}] Processing batch ${Math.floor(i / concurrency) + 1}, files ${i + 1}-${i + batch.length}`);
-    
-    // 并发处理这一批文件
-    await Promise.all(
-      batch.map(async (result) => {
-        const fileStartTime = Date.now();
-        await updateBatchStatus(env, batchId, result.index, 'processing', null, result.file.name);
-        
-        try {
-          // 为整个文件处理添加总超时（120秒）
-          const processResult = await Promise.race([
-            processImageFileFromData(result.imageData, result.imageHash, result.file, env, batchId, result.index),
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('File processing timeout (120s)')), 120000)
-            )
-          ]);
-          
-          if (processResult.status === 'completed') {
-            console.log(`[BatchProcess:${batchId}] File ${result.file.name} processed successfully in ${Date.now() - fileStartTime}ms`);
-            await updateBatchStatus(env, batchId, result.index, 'completed');
-          }
-          
-        } catch (error) {
-          const duration = Date.now() - fileStartTime;
-          console.error(`[BatchProcess:${batchId}] Failed to process ${result.file.name} after ${duration}ms:`, error.message);
-          await updateBatchStatus(env, batchId, result.index, 'failed', error.message);
-        }
-      })
-    );
-    
-    // 批次之间稍微延迟，避免过载
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-  
-  // 标记批次完成
-  await finalizeBatchStatus(env, batchId);
-  console.log(`[BatchProcess:${batchId}] Completed processing ${files.length} files`);
-}
-
-// 处理单个图片文件（从已有数据开始，跳过重复检测）
-async function processImageFileFromData(imageData, imageHash, file, env, batchId, fileIndex) {
-  try {
-    // 检查大小
-    if (imageData.byteLength > 20 * 1024 * 1024) {
-      return { status: 'skipped', reason: 'File too large (>20MB)' };
-    }
-    
-    // 步骤1: 上传到 R2（30秒超时）
-    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 1: Uploading to R2`);
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substring(2, 8);
-    const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
-    
-    await Promise.race([
-      env.R2.put(r2Key, imageData, {
-        httpMetadata: { contentType: file.type || 'image/jpeg', cacheControl: 'public, max-age=31536000' },
-        customMetadata: {
-          uploadedAt: new Date().toISOString(),
-          hash: imageHash,
-          sourceUrl: 'batch-upload',
-          originalName: file.name
-        }
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('R2 upload timeout')), 30000)
-      )
-    ]);
-    
-    const finalUrl = `/r2/${r2Key}`;
-    
-    // 步骤2: 获取图片尺寸（5秒超时）
-    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 2: Getting image dimensions`);
-    const dimensions = await Promise.race([
-      getImageDimensions(imageData),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Get dimensions timeout')), 5000)
-      )
-    ]);
-    
-    // 步骤3: AI 分析（60秒超时，analyzeImage内部已有重试）
-    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 3: AI analysis`);
-    const analysis = await Promise.race([
-      analyzeImage(imageData, env.AI),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI analysis timeout (60s)')), 60000)
-      )
-    ]);
-    
-    if (!analysis) {
-      throw new Error('AI analysis returned null');
-    }
-    
-    analysis.dimensions = dimensions;
-    
-    // 步骤4: 存储到数据库（10秒超时）
-    console.log(`[BatchProcess:${batchId}:${fileIndex}] Step 4: Storing to database`);
-    const { imageId, slug } = await Promise.race([
-      storeImageAnalysis(env.DB, finalUrl, imageHash, analysis),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Database storage timeout')), 10000)
-      )
-    ]);
-    
-    console.log(`[BatchProcess:${batchId}:${fileIndex}] Success: ${slug}`);
-    return { status: 'completed', imageId, slug };
-    
-  } catch (error) {
-    console.error(`[BatchProcess:${batchId}:${fileIndex}] Error:`, error.message);
-    throw error;
   }
 }
 
@@ -2189,24 +2078,6 @@ async function updateBatchStatus(env, batchId, fileIndex, status, error = null, 
   }
 }
 
-// 完成批次状态
-async function finalizeBatchStatus(env, batchId) {
-  try {
-    const statusKey = `batch:${batchId}`;
-    const currentStatus = await env.CACHE.get(statusKey);
-    
-    if (!currentStatus) return;
-    
-    const batchStatus = JSON.parse(currentStatus);
-    batchStatus.status = 'completed';
-    batchStatus.endTime = Date.now();
-    batchStatus.duration = batchStatus.endTime - batchStatus.startTime;
-    
-    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
-  } catch (err) {
-    console.error(`[FinalizeBatchStatus] Error:`, err);
-  }
-}
 
 // 查询批次状态
 async function handleAdminBatchStatus(request, env) {
@@ -2315,4 +2186,3 @@ async function handleAdminBatchCancel(request, env) {
     });
   }
 }
-
