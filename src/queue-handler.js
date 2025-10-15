@@ -249,32 +249,61 @@ async function storeImageAnalysis(db, imageUrl, imageHash, analysis) {
   
   const imageId = result.meta.last_row_id;
   
-  // 插入标签
-  if (tags) {
-    const allTags = [
-      ...(tags.primary || []),
-      ...(tags.subcategories || []),
-      ...(tags.attributes || [])
-    ];
-    
-    for (const tag of allTags) {
-      // 获取或创建标签
-      let tagRecord = await db.prepare('SELECT id FROM tags WHERE name = ? AND level = ?')
-        .bind(tag.name, tag.level).first();
+  // 插入标签（正确处理层级结构）
+  if (tags && tags.primary && Array.isArray(tags.primary)) {
+    for (const primary of tags.primary) {
+      // 存储 Level 1 标签（主分类）
+      const primaryTagId = await getOrCreateTag(db, primary.name, 1);
+      await db.prepare('INSERT INTO image_tags (image_id, tag_id, weight, level) VALUES (?, ?, ?, 1)')
+        .bind(imageId, primaryTagId, primary.weight || 0.8).run();
       
-      if (!tagRecord) {
-        const tagResult = await db.prepare('INSERT INTO tags (name, level) VALUES (?, ?)')
-          .bind(tag.name, tag.level).run();
-        tagRecord = { id: tagResult.meta.last_row_id };
+      // 存储 Level 2 标签（子分类）
+      if (primary.subcategories && Array.isArray(primary.subcategories)) {
+        for (const sub of primary.subcategories) {
+          const subTagId = await getOrCreateTag(db, sub.name, 2);
+          await db.prepare('INSERT INTO image_tags (image_id, tag_id, weight, level) VALUES (?, ?, ?, 2)')
+            .bind(imageId, subTagId, sub.weight || 0.7).run();
+          
+          // 存储 Level 3 标签（属性）
+          if (sub.attributes && Array.isArray(sub.attributes)) {
+            for (const attr of sub.attributes) {
+              const attrTagId = await getOrCreateTag(db, attr.name, 3);
+              await db.prepare('INSERT INTO image_tags (image_id, tag_id, weight, level) VALUES (?, ?, ?, 3)')
+                .bind(imageId, attrTagId, attr.weight || 0.6).run();
+            }
+          }
+        }
       }
-      
-      // 关联标签和图片
-      await db.prepare('INSERT INTO image_tags (image_id, tag_id, weight) VALUES (?, ?, ?)')
-        .bind(imageId, tagRecord.id, tag.confidence || 0.5).run();
     }
   }
   
   return { imageId, slug };
+}
+
+// 获取或创建标签
+async function getOrCreateTag(db, name, level) {
+  // 先查询是否存在
+  let tagRecord = await db.prepare('SELECT id FROM tags WHERE name = ? AND level = ?')
+    .bind(name, level).first();
+  
+  if (tagRecord) {
+    return tagRecord.id;
+  }
+  
+  // 不存在则创建
+  try {
+    const result = await db.prepare('INSERT INTO tags (name, level) VALUES (?, ?)')
+      .bind(name, level).run();
+    return result.meta.last_row_id;
+  } catch (error) {
+    // 如果并发插入导致冲突，重新查询
+    if (error.message.includes('UNIQUE constraint')) {
+      const retry = await db.prepare('SELECT id FROM tags WHERE name = ? AND level = ?')
+        .bind(name, level).first();
+      if (retry) return retry.id;
+    }
+    throw error;
+  }
 }
 
 async function generateSlug(description, db) {
