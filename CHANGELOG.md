@@ -1,5 +1,90 @@
 # 更新日志
 
+## [v2.0.0] - 2024-10-15
+
+### 🚀 重大架构升级
+
+#### 使用 Cloudflare Queue 重构批量上传
+
+**架构变革：**
+- 从 `waitUntil` 后台处理 → **Cloudflare Queue 消息队列**
+- 三阶段处理流程
+- 消息可靠传递和自动重试
+- 批量消费优化
+
+**为什么升级：**
+1. **解决 CPU 限制**：Worker 单次请求有 CPU 时间限制，Queue 无此限制
+2. **可靠性更高**：消息持久化，不会丢失
+3. **自动重试**：失败自动重试（最多3次）
+4. **更好监控**：死信队列保底
+5. **性能更优**：批量消费，并发处理
+
+**三阶段处理流程：**
+
+1. **阶段1：快速预处理**（前端请求，<5秒）
+   - 检查文件大小
+   - 生成 SHA-256 哈希
+   - 检查数据库重复
+   - 重复文件直接标记跳过（不进队列）
+   - 非重复文件上传到临时 R2
+   - 发送消息到队列
+   - **立即返回响应**
+
+2. **阶段2：队列消费**（后台异步）
+   - Queue 批量获取消息（10条/批）
+   - 从临时 R2 获取图片数据
+   - AI 分析（60秒超时）
+   - 存储到永久 R2
+   - 保存到数据库
+   - 删除临时文件
+   - 更新进度状态
+   - 确认消息（ack）
+
+3. **阶段3：自动重试**
+   - 处理失败自动重试
+   - 最多重试 3 次
+   - 3 次失败进入死信队列
+   - 不阻塞其他消息
+
+**技术配置：**
+
+```toml
+# wrangler.toml
+[[queues.producers]]
+binding = "IMAGE_QUEUE"
+queue = "image-processing-queue"
+
+[[queues.consumers]]
+queue = "image-processing-queue"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "image-processing-dlq"
+```
+
+**新增文件：**
+- `src/queue-handler.js` - 队列消费者逻辑
+
+**删除旧代码：**
+- 删除 `processBatchUpload()` 旧实现
+- 删除 `processImageFileFromData()` 旧实现
+- 删除 `finalizeBatchStatus()`
+
+**优势：**
+- ✅ 彻底解决卡死问题
+- ✅ 消息可靠不丢失
+- ✅ 自动重试机制
+- ✅ 重复文件秒级跳过
+- ✅ 批量消费性能优化
+- ✅ 符合 Cloudflare 最佳实践
+
+### 📝 文件修改
+- `wrangler.toml` - 添加 Queue 配置
+- `src/index.js` - 重写批量上传逻辑、添加队列导出
+- `src/queue-handler.js` - 新增队列消费者
+
+---
+
 ## [v1.2.8] - 2024-10-15
 
 ### 🚀 重大架构升级
