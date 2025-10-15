@@ -1,0 +1,9 @@
+# Example environment variables for local development
+# Copy this file to .dev.vars and fill in your values
+
+# These are automatically bound in production via wrangler.toml
+# For local development, you may need to configure them here if testing specific features
+
+# Note: D1, KV, and AI bindings are automatically available in development mode
+# This file is mainly for future custom environment variables you might need
+
