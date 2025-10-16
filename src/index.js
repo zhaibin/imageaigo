@@ -1062,32 +1062,6 @@ async function handleImageDetailPage(request, env, imageSlug) {
     "height": image.height || 0
   };
   
-  // 面包屑导航结构化数据
-  const breadcrumbSchema = {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    "itemListElement": [
-      {
-        "@type": "ListItem",
-        "position": 1,
-        "name": "Home",
-        "item": "https://imageaigo.cc/"
-      },
-      {
-        "@type": "ListItem",
-        "position": 2,
-        "name": "Images",
-        "item": "https://imageaigo.cc/images"
-      },
-      {
-        "@type": "ListItem",
-        "position": 3,
-        "name": image.description ? image.description.substring(0, 50) : 'Image',
-        "item": `https://imageaigo.cc/image/${image.slug}`
-      }
-    ]
-  };
-  
   // 完全重新设计的详情页HTML
   const detailHTML = `<!DOCTYPE html>
 <html lang="en">
@@ -1122,9 +1096,6 @@ async function handleImageDetailPage(request, env, imageSlug) {
   <!-- Structured Data -->
   <script type="application/ld+json">
   ${JSON.stringify(imageSchema)}
-  </script>
-  <script type="application/ld+json">
-  ${JSON.stringify(breadcrumbSchema)}
   </script>
   
   <!-- Google Analytics 4 -->
