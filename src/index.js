@@ -1346,30 +1346,6 @@ async function handleImageDetailPage(request, env, imageSlug) {
     </a>
   </div>
   <div class="container">
-    <!-- 面包屑导航 -->
-    <nav aria-label="Breadcrumb" style="padding: 10px 0; margin-bottom: 15px;">
-      <ol itemscope itemtype="https://schema.org/BreadcrumbList" style="list-style: none; display: flex; gap: 8px; font-size: 0.9rem; color: rgba(255,255,255,0.8); margin: 0; padding: 0;">
-        <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-          <a itemprop="item" href="/" style="color: rgba(255,255,255,0.8); text-decoration: none;">
-            <span itemprop="name">Home</span>
-          </a>
-          <meta itemprop="position" content="1" />
-        </li>
-        <li style="color: rgba(255,255,255,0.5);">›</li>
-        <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-          <a itemprop="item" href="/images" style="color: rgba(255,255,255,0.8); text-decoration: none;">
-            <span itemprop="name">Images</span>
-          </a>
-          <meta itemprop="position" content="2" />
-        </li>
-        <li style="color: rgba(255,255,255,0.5);">›</li>
-        <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
-          <span itemprop="name" style="color: white;">${escapeHtml(image.description ? image.description.substring(0, 40) + '...' : 'Image')}</span>
-          <meta itemprop="position" content="3" />
-        </li>
-      </ol>
-    </nav>
-    
     <div class="detail-container">
       <div class="image-section">
         <img src="${image.image_url}" alt="${escapeHtml(image.description || 'AI-analyzed image with tags: ' + tags.slice(0, 3).map(t => t.name).join(', '))}" title="${escapeHtml(image.description || 'Image')}" loading="eager" decoding="async" ${image.width && image.height ? `style="aspect-ratio: ${image.width} / ${image.height}"` : ''}>
@@ -2762,9 +2738,11 @@ async function handleSitemap(env) {
     `).all();
     
     images.forEach(img => {
+      // 确保时间格式为标准 ISO 8601
+      const lastmod = img.created_at ? new Date(img.created_at).toISOString() : now;
       urls.push({
         loc: baseUrl + '/image/' + img.slug,
-        lastmod: img.created_at,
+        lastmod: lastmod,
         changefreq: 'weekly',
         priority: '0.8'
       });
@@ -2783,9 +2761,11 @@ async function handleSitemap(env) {
     `).all();
     
     categories.forEach(cat => {
+      // 确保时间格式为标准 ISO 8601
+      const lastmod = cat.last_update ? new Date(cat.last_update).toISOString() : now;
       urls.push({
         loc: baseUrl + '/category/' + encodeURIComponent(cat.name),
-        lastmod: cat.last_update || now,
+        lastmod: lastmod,
         changefreq: 'weekly',
         priority: '0.7'
       });
@@ -2805,22 +2785,24 @@ async function handleSitemap(env) {
     `).all();
     
     tags.forEach(tag => {
+      // 确保时间格式为标准 ISO 8601
+      const lastmod = tag.last_update ? new Date(tag.last_update).toISOString() : now;
       urls.push({
         loc: baseUrl + '/tag/' + encodeURIComponent(tag.name),
-        lastmod: tag.last_update || now,
+        lastmod: lastmod,
         changefreq: 'weekly',
         priority: '0.6'
       });
     });
     
-    // 生成 XML
+    // 生成 XML（不要对 URL 进行 HTML 转义）
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
         http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
 ${urls.map(url => `  <url>
-    <loc>${escapeHtml(url.loc)}</loc>
+    <loc>${url.loc}</loc>
     <lastmod>${url.lastmod}</lastmod>
     <changefreq>${url.changefreq}</changefreq>
     <priority>${url.priority}</priority>
