@@ -527,6 +527,48 @@ button:disabled {
     transition: opacity 0.3s ease-in-out;
 }
 
+/* 导航按钮 */
+.nav-buttons {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 999;
+    pointer-events: none;
+}
+
+.nav-buttons > * {
+    pointer-events: auto;
+}
+
+.back-btn, .home-btn {
+    width: 45px;
+    height: 45px;
+    background: rgba(255,255,255,0.95);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #667eea;
+    text-decoration: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.back-btn:hover, .home-btn:hover {
+    background: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+}
+
+.back-btn svg, .home-btn svg {
+    display: block;
+}
+
 @media (max-width: 768px) {
     h1 {
         font-size: 2rem;
@@ -548,6 +590,22 @@ button:disabled {
     .url-input-group button {
         width: 100%;
         padding: 15px;
+    }
+
+    .nav-buttons {
+        top: 15px;
+        left: 15px;
+        right: 15px;
+    }
+
+    .back-btn, .home-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .back-btn svg, .home-btn svg {
+        width: 18px;
+        height: 18px;
     }
 }
 `;
