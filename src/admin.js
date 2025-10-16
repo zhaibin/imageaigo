@@ -767,7 +767,6 @@ export function buildAdminDashboard() {
         return await response.json();
       } catch (error) {
         console.error('API Error:', error);
-        alert('请求失败: ' + error.message);
         return null;
       }
     }
@@ -918,7 +917,6 @@ export function buildAdminDashboard() {
       
       const result = await apiRequest(\`/api/admin/image/\${imageId}\`, { method: 'DELETE' });
       if (result && result.success) {
-        alert('删除成功');
         loadImages(currentPage);
         loadStats();
       }
@@ -937,7 +935,6 @@ export function buildAdminDashboard() {
         const result = await apiRequest(\`/api/admin/image/\${imageId}/reanalyze\`, { method: 'POST' });
         
         if (result && result.success) {
-          alert(\`重新分析成功！\\n\\n新描述: \${result.newDescription.substring(0, 100)}...\\n新标签数: \${result.tagCount} 个\`);
           loadImages(currentPage);
           loadStats();
         } else {
@@ -945,7 +942,7 @@ export function buildAdminDashboard() {
         }
       } catch (error) {
         row.innerHTML = originalContent;
-        alert('重新分析失败: ' + error.message);
+        console.error('重新分析失败:', error);
       }
     }
     
@@ -1007,7 +1004,6 @@ export function buildAdminDashboard() {
       
       const result = await apiRequest(\`/api/admin/tag/\${tagId}\`, { method: 'DELETE' });
       if (result && result.success) {
-        alert('删除成功');
         loadTags();
         loadStats();
       }
@@ -1231,7 +1227,6 @@ export function buildAdminDashboard() {
         const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
         
         if (files.length === 0) {
-          alert('请拖拽图片文件');
           return;
         }
         
@@ -1500,15 +1495,11 @@ export function buildAdminDashboard() {
         });
         
         if (result && result.success) {
-          alert('✅ 批次已取消');
           // 立即更新进度面板
           updateProgressPanel();
-        } else {
-          alert('❌ 取消失败: ' + (result?.error || '未知错误'));
         }
       } catch (error) {
         console.error('Cancel batch error:', error);
-        alert('❌ 取消失败: ' + error.message);
       }
     }
     

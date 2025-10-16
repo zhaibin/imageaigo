@@ -57,6 +57,31 @@ export default {
         return await handleSearchPage(request, env);
       }
 
+      // Sitemap
+      if (path === '/sitemap.xml') {
+        return await handleSitemap(env);
+      }
+
+      // Robots.txt
+      if (path === '/robots.txt') {
+        return new Response(getRobotsTxt(), {
+          headers: {
+            'Content-Type': 'text/plain;charset=UTF-8',
+            'Cache-Control': 'public, max-age=86400'
+          }
+        });
+      }
+
+      // PWA Manifest
+      if (path === '/manifest.json') {
+        return new Response(getManifestJson(), {
+          headers: {
+            'Content-Type': 'application/json;charset=UTF-8',
+            'Cache-Control': 'public, max-age=86400'
+          }
+        });
+      }
+
       // Legal pages
       if (path === '/privacy' || path === '/privacy.html') {
         return new Response(buildLegalPage('Privacy Policy | ImageAI Go', 'Privacy Policy', PRIVACY_CONTENT), {
@@ -1019,6 +1044,50 @@ async function handleImageDetailPage(request, env, imageSlug) {
     </a>
   `).join('');
   
+  // 准备结构化数据
+  const imageSchema = {
+    "@context": "https://schema.org",
+    "@type": "ImageObject",
+    "contentUrl": image.image_url,
+    "url": `https://imageaigo.cc/image/${image.slug}`,
+    "description": image.description || 'AI-analyzed image',
+    "datePublished": image.created_at,
+    "author": {
+      "@type": "Organization",
+      "name": "ImageAI Go"
+    },
+    "keywords": tags.map(t => t.name).join(', '),
+    "thumbnailUrl": image.image_url,
+    "width": image.width || 0,
+    "height": image.height || 0
+  };
+  
+  // 面包屑导航结构化数据
+  const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://imageaigo.cc/"
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": "Images",
+        "item": "https://imageaigo.cc/images"
+      },
+      {
+        "@type": "ListItem",
+        "position": 3,
+        "name": image.description ? image.description.substring(0, 50) : 'Image',
+        "item": `https://imageaigo.cc/image/${image.slug}`
+      }
+    ]
+  };
+  
   // 完全重新设计的详情页HTML
   const detailHTML = `<!DOCTYPE html>
 <html lang="en">
@@ -1027,8 +1096,49 @@ async function handleImageDetailPage(request, env, imageSlug) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(image.description ? image.description.substring(0, 60) + '...' : 'Image')} | ImageAI Go</title>
   <meta name="description" content="${escapeHtml(image.description || 'View image')}">
+  <meta name="keywords" content="${tags.map(t => escapeHtml(t.name)).join(', ')}, AI image analysis, image tagging">
   <link rel="canonical" href="https://imageaigo.cc/image/${image.slug}">
+  
+  <!-- Enhanced Open Graph -->
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="${escapeHtml(image.description ? image.description.substring(0, 60) : 'Image')}">
+  <meta property="og:description" content="${escapeHtml(image.description || 'View image')}">
   <meta property="og:image" content="${image.image_url}">
+  <meta property="og:image:width" content="${image.width || 1200}">
+  <meta property="og:image:height" content="${image.height || 630}">
+  <meta property="og:image:alt" content="${escapeHtml(image.description || 'Image')}">
+  <meta property="og:url" content="https://imageaigo.cc/image/${image.slug}">
+  <meta property="og:site_name" content="ImageAI Go">
+  <meta property="article:published_time" content="${image.created_at}">
+  <meta property="article:tag" content="${tags.map(t => escapeHtml(t.name)).join(', ')}">
+  
+  <!-- Enhanced Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(image.description ? image.description.substring(0, 60) : 'Image')}">
+  <meta name="twitter:description" content="${escapeHtml(image.description || 'View image')}">
+  <meta name="twitter:image" content="${image.image_url}">
+  <meta name="twitter:image:alt" content="${escapeHtml(image.description || 'Image')}">
+  
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  ${JSON.stringify(imageSchema)}
+  </script>
+  <script type="application/ld+json">
+  ${JSON.stringify(breadcrumbSchema)}
+  </script>
+  
+  <!-- Google Analytics 4 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-RGN9QJ4Y0Y', {
+      'anonymize_ip': true,
+      'cookie_flags': 'SameSite=None;Secure'
+    });
+  </script>
+  
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -1236,9 +1346,33 @@ async function handleImageDetailPage(request, env, imageSlug) {
     </a>
   </div>
   <div class="container">
+    <!-- 面包屑导航 -->
+    <nav aria-label="Breadcrumb" style="padding: 10px 0; margin-bottom: 15px;">
+      <ol itemscope itemtype="https://schema.org/BreadcrumbList" style="list-style: none; display: flex; gap: 8px; font-size: 0.9rem; color: rgba(255,255,255,0.8); margin: 0; padding: 0;">
+        <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+          <a itemprop="item" href="/" style="color: rgba(255,255,255,0.8); text-decoration: none;">
+            <span itemprop="name">Home</span>
+          </a>
+          <meta itemprop="position" content="1" />
+        </li>
+        <li style="color: rgba(255,255,255,0.5);">›</li>
+        <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+          <a itemprop="item" href="/images" style="color: rgba(255,255,255,0.8); text-decoration: none;">
+            <span itemprop="name">Images</span>
+          </a>
+          <meta itemprop="position" content="2" />
+        </li>
+        <li style="color: rgba(255,255,255,0.5);">›</li>
+        <li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+          <span itemprop="name" style="color: white;">${escapeHtml(image.description ? image.description.substring(0, 40) + '...' : 'Image')}</span>
+          <meta itemprop="position" content="3" />
+        </li>
+      </ol>
+    </nav>
+    
     <div class="detail-container">
       <div class="image-section">
-        <img src="${image.image_url}" alt="${escapeHtml(image.description)}" loading="lazy" decoding="async" ${image.width && image.height ? `style="aspect-ratio: ${image.width} / ${image.height}"` : ''}>
+        <img src="${image.image_url}" alt="${escapeHtml(image.description || 'AI-analyzed image with tags: ' + tags.slice(0, 3).map(t => t.name).join(', '))}" title="${escapeHtml(image.description || 'Image')}" loading="eager" decoding="async" ${image.width && image.height ? `style="aspect-ratio: ${image.width} / ${image.height}"` : ''}>
       </div>
       
       <div class="info-section">
@@ -1622,6 +1756,66 @@ async function getImageTags(db, imageId) {
 
 // 使用 utils 中的 generateHash
 const generateHash = utilsGenerateHash;
+
+// PWA Manifest
+function getManifestJson() {
+  return JSON.stringify({
+    "name": "ImageAI Go - AI-Powered Image Analysis",
+    "short_name": "ImageAI Go",
+    "description": "Upload images and get instant AI-powered analysis with intelligent hierarchical tags, descriptions, and smart recommendations",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#667eea",
+    "theme_color": "#667eea",
+    "orientation": "portrait-primary",
+    "scope": "/",
+    "lang": "en",
+    "dir": "ltr",
+    "categories": ["productivity", "photo", "utilities"],
+    "icons": [
+      {
+        "src": "/favicon.svg",
+        "sizes": "any",
+        "type": "image/svg+xml",
+        "purpose": "any maskable"
+      }
+    ]
+  });
+}
+
+// Robots.txt
+function getRobotsTxt() {
+  return `# ImageAI Go - Robots.txt
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://imageaigo.cc/sitemap.xml
+
+# Crawl delay (optional, be friendly to crawlers)
+Crawl-delay: 1
+
+# Disallow admin area
+User-agent: *
+Disallow: /admin
+Disallow: /api/admin
+
+# Allow all API endpoints for indexing (except admin)
+Allow: /api/images
+Allow: /api/categories
+Allow: /api/image
+Allow: /api/search
+
+# Popular search engines
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /`;
+}
 
 // Favicon SVG
 function getFaviconSVG() {
@@ -2518,6 +2712,136 @@ async function handleAdminReanalyzeImage(request, env, imageId) {
       status: 500,
       headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
     });
+  }
+}
+
+// Sitemap 处理
+async function handleSitemap(env) {
+  try {
+    // 检查缓存
+    const cached = await env.CACHE.get('sitemap:xml');
+    if (cached) {
+      console.log('[Sitemap] Using cached version');
+      return new Response(cached, {
+        headers: {
+          'Content-Type': 'application/xml;charset=UTF-8',
+          'Cache-Control': 'public, max-age=3600',
+          'X-Robots-Tag': 'all'
+        }
+      });
+    }
+
+    const baseUrl = 'https://imageaigo.cc';
+    const now = new Date().toISOString();
+    
+    let urls = [];
+    
+    // 1. 首页（最高优先级）
+    urls.push({
+      loc: baseUrl + '/',
+      lastmod: now,
+      changefreq: 'daily',
+      priority: '1.0'
+    });
+    
+    // 2. 主要页面
+    urls.push(
+      { loc: baseUrl + '/images', lastmod: now, changefreq: 'daily', priority: '0.9' },
+      { loc: baseUrl + '/search', lastmod: now, changefreq: 'daily', priority: '0.8' },
+      { loc: baseUrl + '/about', lastmod: now, changefreq: 'monthly', priority: '0.5' },
+      { loc: baseUrl + '/privacy', lastmod: now, changefreq: 'monthly', priority: '0.3' },
+      { loc: baseUrl + '/terms', lastmod: now, changefreq: 'monthly', priority: '0.3' }
+    );
+    
+    // 3. 所有图片详情页（最多1000张）
+    const { results: images } = await env.DB.prepare(`
+      SELECT slug, created_at 
+      FROM images 
+      ORDER BY created_at DESC 
+      LIMIT 1000
+    `).all();
+    
+    images.forEach(img => {
+      urls.push({
+        loc: baseUrl + '/image/' + img.slug,
+        lastmod: img.created_at,
+        changefreq: 'weekly',
+        priority: '0.8'
+      });
+    });
+    
+    // 4. 所有分类页（level 1 tags，至少5张图片）
+    const { results: categories } = await env.DB.prepare(`
+      SELECT t.name, MAX(i.created_at) as last_update
+      FROM tags t
+      JOIN image_tags it ON t.id = it.tag_id
+      JOIN images i ON it.image_id = i.id
+      WHERE t.level = 1
+      GROUP BY t.id, t.name
+      HAVING COUNT(DISTINCT i.id) >= 5
+      ORDER BY COUNT(DISTINCT i.id) DESC
+    `).all();
+    
+    categories.forEach(cat => {
+      urls.push({
+        loc: baseUrl + '/category/' + encodeURIComponent(cat.name),
+        lastmod: cat.last_update || now,
+        changefreq: 'weekly',
+        priority: '0.7'
+      });
+    });
+    
+    // 5. 热门标签页（level 2-3 tags，至少3张图片）
+    const { results: tags } = await env.DB.prepare(`
+      SELECT t.name, t.level, MAX(i.created_at) as last_update
+      FROM tags t
+      JOIN image_tags it ON t.id = it.tag_id
+      JOIN images i ON it.image_id = i.id
+      WHERE t.level > 1
+      GROUP BY t.id, t.name, t.level
+      HAVING COUNT(DISTINCT i.id) >= 3
+      ORDER BY COUNT(DISTINCT i.id) DESC
+      LIMIT 200
+    `).all();
+    
+    tags.forEach(tag => {
+      urls.push({
+        loc: baseUrl + '/tag/' + encodeURIComponent(tag.name),
+        lastmod: tag.last_update || now,
+        changefreq: 'weekly',
+        priority: '0.6'
+      });
+    });
+    
+    // 生成 XML
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+${urls.map(url => `  <url>
+    <loc>${escapeHtml(url.loc)}</loc>
+    <lastmod>${url.lastmod}</lastmod>
+    <changefreq>${url.changefreq}</changefreq>
+    <priority>${url.priority}</priority>
+  </url>`).join('\n')}
+</urlset>`;
+    
+    // 缓存1小时
+    await env.CACHE.put('sitemap:xml', xml, { expirationTtl: 3600 });
+    
+    console.log(`[Sitemap] Generated with ${urls.length} URLs`);
+    
+    return new Response(xml, {
+      headers: {
+        'Content-Type': 'application/xml;charset=UTF-8',
+        'Cache-Control': 'public, max-age=3600',
+        'X-Robots-Tag': 'all'
+      }
+    });
+  } catch (error) {
+    console.error('[Sitemap] Error:', error);
+    return new Response('Error generating sitemap', { status: 500 });
   }
 }
 

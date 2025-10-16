@@ -23,6 +23,14 @@ export function buildMainHTML() {
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="alternate icon" href="/favicon.ico">
     
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ImageAI Go">
+    <link rel="apple-touch-icon" href="/favicon.svg">
+    
     <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://imageaigo.cc/">
@@ -36,6 +44,9 @@ export function buildMainHTML() {
     <!-- Canonical -->
     <link rel="canonical" href="https://imageaigo.cc/">
     
+    <!-- Sitemap -->
+    <link rel="sitemap" type="application/xml" href="https://imageaigo.cc/sitemap.xml">
+    
     <!-- Structured Data -->
     <script type="application/ld+json">
     {
@@ -47,6 +58,19 @@ export function buildMainHTML() {
       "applicationCategory": "MultimediaApplication"
     }
     </script>
+    
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-RGN9QJ4Y0Y', {
+        'anonymize_ip': true,
+        'cookie_flags': 'SameSite=None;Secure'
+      });
+    </script>
+    
     <style>${MAIN_STYLES}</style>
 </head>
 <body itemscope itemtype="https://schema.org/WebPage">
@@ -655,7 +679,13 @@ function getClientScript() {
         }
         
         img.src = image.image_url;
-        img.alt = image.description || 'Image';
+        // 优化的 alt 标签 - 包含描述和关键标签
+        const tags = image.tags ? 
+          [...(image.tags.primary || []), ...(image.tags.subcategories || []), ...(image.tags.attributes || [])]
+            .slice(0, 3)
+            .map(t => t.name)
+            .join(', ') : '';
+        img.alt = (image.description || 'Image') + (tags ? ' - ' + tags : '');
         
         // Set aspect ratio to prevent layout shift
         if (image.width && image.height) {
@@ -785,10 +815,11 @@ function getClientScript() {
 
             categoriesContainer.innerHTML = '<div class="category-pill active" data-category="">All</div>';
             
-            data.categories.forEach(cat => {
+            // 只显示图片数量>=5的分类，且不显示数字
+            data.categories.filter(cat => cat.count >= 5).forEach(cat => {
                 const pill = document.createElement('a');
                 pill.className = 'category-pill';
-                pill.textContent = \`\${cat.name} (\${cat.count})\`;
+                pill.textContent = cat.name;
                 pill.href = \`/category/\${encodeURIComponent(cat.name)}\`;
                 pill.dataset.category = cat.name;
                 categoriesContainer.appendChild(pill);
@@ -899,6 +930,19 @@ export function buildLegalPage(title, heading, content) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
   <meta name="robots" content="index, follow">
+  
+  <!-- Google Analytics 4 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-RGN9QJ4Y0Y', {
+      'anonymize_ip': true,
+      'cookie_flags': 'SameSite=None;Secure'
+    });
+  </script>
+  
   <style>${LEGAL_STYLES}</style>
 </head>
 <body>
@@ -936,12 +980,33 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
   <title>${escapeHtml(title)}</title>
   <meta name="description" content="${escapeHtml(description)}">
   <link rel="canonical" href="${canonical}">
+  
+  <!-- Open Graph -->
   <meta property="og:type" content="website">
   <meta property="og:url" content="${canonical}">
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:site_name" content="ImageAI Go">
   ${ogImage ? `<meta property="og:image" content="${ogImage}">` : ''}
-  <meta property="twitter:card" content="summary_large_image">
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  ${ogImage ? `<meta name="twitter:image" content="${ogImage}">` : ''}
+  
+  <!-- Google Analytics 4 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-RGN9QJ4Y0Y', {
+      'anonymize_ip': true,
+      'cookie_flags': 'SameSite=None;Secure'
+    });
+  </script>
+  
   <style>${MAIN_STYLES}</style>
 </head>
 <body>
@@ -1272,7 +1337,11 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         
         const img = document.createElement('img');
         img.src = image.image_url;
-        img.alt = image.description || 'Image';
+        // 优化的 alt 标签 - 包含描述和关键标签
+        const imgTags = image.tags ? 
+          image.tags.slice(0, 3).map(t => t.name).join(', ') : '';
+        img.alt = (image.description || 'Image') + (imgTags ? ' - Tags: ' + imgTags : '');
+        img.title = image.description || 'Image';
         img.loading = 'lazy';
         img.decoding = 'async';
         if (image.width && image.height) {
