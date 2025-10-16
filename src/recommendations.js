@@ -1,5 +1,5 @@
 /**
- * Gets recommended images based on tag similarity
+ * Gets recommended images based on advanced multi-dimensional tag similarity
  * @param {D1Database} db - D1 database binding
  * @param {number} imageId - The image ID to find recommendations for
  * @param {number} limit - Maximum number of recommendations (default: 8)
@@ -7,33 +7,41 @@
  */
 export async function getRecommendations(db, imageId, limit = 8) {
   try {
-    // Get tags for the source image
+    // Get tags for the source image with hierarchical structure
     const { results: sourceTags } = await db.prepare(`
-      SELECT it.tag_id, it.weight, it.level, t.name
+      SELECT it.tag_id, it.weight, it.level, t.name, t.parent_id
       FROM image_tags it
       JOIN tags t ON it.tag_id = t.id
       WHERE it.image_id = ?
+      ORDER BY it.level, it.weight DESC
     `).bind(imageId).all();
 
     if (sourceTags.length === 0) {
       return [];
     }
 
-    // Calculate tag IDs and weights for similarity scoring
+    // Organize tags by level for sophisticated matching
+    const tagsByLevel = {
+      primary: sourceTags.filter(t => t.level === 1),
+      subcategory: sourceTags.filter(t => t.level === 2),
+      attribute: sourceTags.filter(t => t.level === 3)
+    };
+
+    // Build weighted tag map with enhanced multipliers
     const tagWeights = {};
     sourceTags.forEach(tag => {
-      // Weight by level: primary (3x), subcategory (2x), attribute (1x)
-      const levelMultiplier = tag.level === 1 ? 3 : tag.level === 2 ? 2 : 1;
+      // Enhanced level multipliers for better discrimination:
+      // Primary (5x) - Most important for category matching
+      // Subcategory (3x) - Key for style/type matching  
+      // Attribute (1.5x) - Fine-grained details
+      const levelMultiplier = tag.level === 1 ? 5.0 : tag.level === 2 ? 3.0 : 1.5;
       tagWeights[tag.tag_id] = tag.weight * levelMultiplier;
     });
 
     const tagIds = Object.keys(tagWeights).join(',');
 
-    // Find images with similar tags using a similarity score
-    // Similarity is calculated based on:
-    // 1. Number of shared tags
-    // 2. Weight of shared tags
-    // 3. Level importance
+    // Get candidate images with shared tags
+    // Require at least 1 primary tag match for relevance
     const { results: candidates } = await db.prepare(`
       SELECT 
         i.id,
@@ -42,56 +50,136 @@ export async function getRecommendations(db, imageId, limit = 8) {
         i.description,
         GROUP_CONCAT(it.tag_id) as tag_ids,
         GROUP_CONCAT(it.weight) as weights,
-        GROUP_CONCAT(it.level) as levels
+        GROUP_CONCAT(it.level) as levels,
+        GROUP_CONCAT(t.name) as tag_names
       FROM images i
       JOIN image_tags it ON i.id = it.image_id
+      JOIN tags t ON it.tag_id = t.id
       WHERE it.tag_id IN (${tagIds})
         AND i.id != ?
       GROUP BY i.id
-      HAVING COUNT(DISTINCT it.tag_id) >= 1
+      HAVING COUNT(DISTINCT it.tag_id) >= 2
       ORDER BY COUNT(DISTINCT it.tag_id) DESC
-      LIMIT 50
+      LIMIT 100
     `).bind(imageId).all();
 
-    // Calculate similarity scores
-    const recommendations = candidates.map(image => {
-      const imageTags = image.tag_ids.split(',').map(Number);
-      const imageWeights = image.weights.split(',').map(Number);
-      const imageLevels = image.levels.split(',').map(Number);
+    // Calculate advanced similarity scores
+    const recommendations = candidates.map(candidate => {
+      const candidateTags = candidate.tag_ids.split(',').map(Number);
+      const candidateWeights = candidate.weights.split(',').map(Number);
+      const candidateLevels = candidate.levels.split(',').map(Number);
 
-      let similarityScore = 0;
-      let matchedTags = 0;
+      // Multi-dimensional similarity components
+      let primaryMatch = 0;      // Primary category overlap
+      let subcategoryMatch = 0;   // Subcategory overlap
+      let attributeMatch = 0;     // Attribute overlap
+      let weightedMatch = 0;      // Overall weighted similarity
+      
+      let primaryCount = 0;
+      let subcategoryCount = 0;
+      let attributeCount = 0;
 
-      imageTags.forEach((tagId, idx) => {
+      // Calculate matches by level
+      candidateTags.forEach((tagId, idx) => {
         if (tagWeights[tagId]) {
-          // Calculate contribution to similarity
           const sourceWeight = tagWeights[tagId];
-          const targetWeight = imageWeights[idx];
-          const level = imageLevels[idx];
-          const levelMultiplier = level === 1 ? 3 : level === 2 ? 2 : 1;
+          const targetWeight = candidateWeights[idx];
+          const level = candidateLevels[idx];
 
-          similarityScore += (sourceWeight + targetWeight) * levelMultiplier;
-          matchedTags++;
+          // Calculate weighted similarity for this tag
+          // Use geometric mean to balance source and target weights
+          const tagSimilarity = Math.sqrt(sourceWeight * targetWeight);
+          weightedMatch += tagSimilarity;
+
+          // Track matches by level
+          if (level === 1) {
+            primaryMatch += tagSimilarity;
+            primaryCount++;
+          } else if (level === 2) {
+            subcategoryMatch += tagSimilarity;
+            subcategoryCount++;
+          } else if (level === 3) {
+            attributeMatch += tagSimilarity;
+            attributeCount++;
+          }
         }
       });
 
-      // Normalize score by number of matched tags and total source tags
-      const normalizedScore = (similarityScore / (sourceTags.length * 3)) * (matchedTags / sourceTags.length);
+      // Calculate level-specific scores (0-1 range)
+      const primaryScore = tagsByLevel.primary.length > 0 
+        ? primaryMatch / (tagsByLevel.primary.length * 5.0) // Normalize by max possible
+        : 0;
+      
+      const subcategoryScore = tagsByLevel.subcategory.length > 0
+        ? subcategoryMatch / (tagsByLevel.subcategory.length * 3.0)
+        : 0;
+      
+      const attributeScore = tagsByLevel.attribute.length > 0
+        ? attributeMatch / (tagsByLevel.attribute.length * 1.5)
+        : 0;
+
+      // Calculate diversity penalty to avoid showing too similar images
+      const totalSourceTags = sourceTags.length;
+      const matchRatio = (primaryCount + subcategoryCount + attributeCount) / totalSourceTags;
+      
+      // Penalty for either too few or too many matches
+      // Sweet spot is 40-80% match ratio
+      let diversityFactor = 1.0;
+      if (matchRatio < 0.3) {
+        diversityFactor = 0.7; // Too different
+      } else if (matchRatio > 0.9) {
+        diversityFactor = 0.85; // Too similar (possibly duplicate)
+      }
+
+      // Composite similarity score with weighted components:
+      // - Primary category match: 50% weight (most important)
+      // - Subcategory match: 30% weight (important for style)
+      // - Attribute match: 20% weight (fine details)
+      const compositeSimilarity = (
+        primaryScore * 0.50 +
+        subcategoryScore * 0.30 +
+        attributeScore * 0.20
+      ) * diversityFactor;
+
+      // Calculate confidence based on number of matches
+      const matchQuality = (primaryCount * 3 + subcategoryCount * 2 + attributeCount) / 
+                          (tagsByLevel.primary.length * 3 + tagsByLevel.subcategory.length * 2 + tagsByLevel.attribute.length);
 
       return {
-        id: image.id,
-        slug: image.slug,
-        image_url: image.image_url,
-        description: image.description,
-        similarity: Math.min(normalizedScore, 1.0),
-        matched_tags: matchedTags
+        id: candidate.id,
+        slug: candidate.slug,
+        image_url: candidate.image_url,
+        description: candidate.description,
+        similarity: Math.min(compositeSimilarity, 1.0),
+        confidence: Math.min(matchQuality, 1.0),
+        matched_primary: primaryCount,
+        matched_subcategory: subcategoryCount,
+        matched_attribute: attributeCount,
+        match_breakdown: {
+          primary: Math.round(primaryScore * 100) / 100,
+          subcategory: Math.round(subcategoryScore * 100) / 100,
+          attribute: Math.round(attributeScore * 100) / 100
+        }
       };
     });
 
-    // Sort by similarity score and return top results
-    recommendations.sort((a, b) => b.similarity - a.similarity);
+    // Filter out low-quality recommendations
+    // Require minimum primary match for relevance
+    const qualityFiltered = recommendations.filter(rec => 
+      rec.matched_primary >= 1 && rec.similarity >= 0.15
+    );
 
-    return recommendations.slice(0, limit);
+    // Sort by composite similarity score
+    qualityFiltered.sort((a, b) => {
+      // Primary sort by similarity
+      if (Math.abs(b.similarity - a.similarity) > 0.05) {
+        return b.similarity - a.similarity;
+      }
+      // Secondary sort by confidence for similar scores
+      return b.confidence - a.confidence;
+    });
+
+    return qualityFiltered.slice(0, limit);
 
   } catch (error) {
     console.error('Error getting recommendations:', error);

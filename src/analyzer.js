@@ -53,21 +53,21 @@ Example style: "Golden mountains bathed in sunset light."`;
     const description = descriptionResponse?.description || descriptionResponse?.response || 'No description available';
     console.log(`[Analyzer] Description generated (${Date.now() - startTime}ms)`);
 
-    // Second pass: Get structured tags
-    const taggingPrompt = `Analyze this image and provide a hierarchical categorization in JSON format:
+    // Second pass: Get structured tags with enhanced precision for recommendations
+    const taggingPrompt = `Analyze this image and provide a hierarchical categorization in JSON format optimized for content recommendations:
 
 {
   "primary": [
     {
-      "name": "Category name (e.g., Nature, Portrait, Architecture)",
+      "name": "Category name",
       "weight": 0.95,
       "subcategories": [
         {
-          "name": "Subcategory (e.g., Landscape, Urban, Wildlife)",
+          "name": "Subcategory",
           "weight": 0.85,
           "attributes": [
-            {"name": "Attribute 1 (e.g., Sunset, Mountains, Ocean)", "weight": 0.90},
-            {"name": "Attribute 2 (e.g., Vibrant, Peaceful, Dramatic)", "weight": 0.75},
+            {"name": "Attribute 1", "weight": 0.90},
+            {"name": "Attribute 2", "weight": 0.75},
             {"name": "Attribute 3", "weight": 0.70}
           ]
         }
@@ -76,14 +76,44 @@ Example style: "Golden mountains bathed in sunset light."`;
   ]
 }
 
-Rules:
-- Primary categories (1-2): Main image type (Nature, Portrait, Architecture, Food, Abstract, Animals, Technology, Sports, Art, Urban, Interior)
-- Subcategories (1-3 per primary): More specific classification
-- Attributes (3-6 per subcategory): Specific details, colors, moods, styles, objects
-- Weights: 0.0-1.0, higher = more relevant
-- Return ONLY valid JSON, no explanation
+CRITICAL REQUIREMENTS FOR ACCURATE RECOMMENDATIONS:
 
-Provide the JSON now:`;
+1. PRIMARY CATEGORIES (1-2 categories only):
+   - Choose the MOST SPECIFIC applicable category
+   - Available: Nature, Portrait, Architecture, Food, Abstract, Animals, Technology, Sports, Art, Urban, Interior, Travel, Fashion, Product, Event
+   - Weight 0.90-1.0 for dominant category, 0.70-0.89 for secondary
+   - If image is clearly one type, use ONLY ONE primary category
+
+2. SUBCATEGORIES (2-3 per primary):
+   - MUST be highly specific to enable precise matching
+   - For Nature: Mountain, Beach, Forest, Desert, Lake, River, Sky, Flower, Wildlife Scene
+   - For Portrait: Studio, Outdoor, Closeup, Group, Candid, Professional
+   - For Architecture: Modern, Historic, Interior, Exterior, Minimalist, Ornate
+   - For Food: Meal, Dessert, Beverage, Ingredient, Plated, Casual
+   - Weight based on prominence: dominant=0.85-0.95, supporting=0.70-0.84
+
+3. ATTRIBUTES (4-6 per subcategory - CRITICAL FOR RECOMMENDATIONS):
+   - Include CONCRETE visual elements: specific colors, objects, compositions
+   - Include MOOD/STYLE: vibrant, muted, dramatic, peaceful, minimalist, busy
+   - Include LIGHTING: bright, dim, sunset, golden hour, studio, natural
+   - Include TECHNICAL aspects: closeup, wide-angle, bokeh, sharp, motion
+   - Include SPECIFIC OBJECTS visible in image
+   - Use precise terms, avoid generic words like "beautiful", "nice", "good"
+   - Weight: 0.90+ for dominant features, 0.70-0.89 for secondary, 0.60-0.69 for subtle
+
+4. WEIGHT GUIDELINES (crucial for recommendation accuracy):
+   - 0.95-1.0: Absolutely dominant, defines the image
+   - 0.85-0.94: Very prominent, major characteristic
+   - 0.75-0.84: Clearly present, important feature
+   - 0.65-0.74: Visible, supporting element
+   - 0.60-0.64: Subtle, minor detail
+
+5. AVOID OVER-GENERALIZATION:
+   - DON'T use vague terms: "outdoor", "colorful", "scene", "view"
+   - DO use specific terms: "mountain peak", "azure blue", "street market", "aerial perspective"
+   - Balance specificity with searchability
+
+Return ONLY valid JSON, no explanation or commentary.`;
 
     const taggingResponse = await retryWithTimeout(
       () => ai.run('@cf/meta/llama-3.2-11b-vision-instruct', {

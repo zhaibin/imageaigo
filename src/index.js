@@ -708,6 +708,22 @@ async function handleGetRecommendations(imageSlug, env) {
     });
   }
 
+  // Generate cache key for recommendations
+  const cacheKey = `recommendations:${imageSlug}`;
+  
+  // Try to get from cache first
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    console.log(`[Cache] Hit for recommendations: ${imageSlug}`);
+    return new Response(cached, {
+      headers: { 
+        ...handleCORS().headers, 
+        'Content-Type': 'application/json',
+        'X-Cache': 'HIT'
+      }
+    });
+  }
+
   // 获取图片ID
   let image;
   if (isNaN(imageSlug)) {
@@ -722,9 +738,26 @@ async function handleGetRecommendations(imageSlug, env) {
     });
   }
 
+  // Get recommendations with advanced algorithm
   const recommendations = await getRecommendations(env.DB, image.id);
-  return new Response(JSON.stringify({ recommendations }), {
-    headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+  
+  const responseData = JSON.stringify({ 
+    recommendations,
+    cached: false,
+    count: recommendations.length
+  });
+  
+  // Cache for 30 minutes (recommendations don't change frequently)
+  // Use longer TTL since tag-based recommendations are stable
+  env.CACHE.put(cacheKey, responseData, { expirationTtl: 1800 })
+    .catch(err => console.warn('[Cache] Failed to cache recommendations:', err.message));
+
+  return new Response(responseData, {
+    headers: { 
+      ...handleCORS().headers, 
+      'Content-Type': 'application/json',
+      'X-Cache': 'MISS'
+    }
   });
 }
 
@@ -1922,7 +1955,19 @@ async function handleAdminDeleteImage(request, env, imageId) {
       if (image.slug) {
         await env.CACHE.delete(`image:${image.slug}`);
         await env.CACHE.delete(`image:${image.id}`);
+        await env.CACHE.delete(`image-json:${image.slug}`);
         console.log(`[AdminDelete] Cleared image cache: ${image.slug}`);
+      }
+      
+      // 清理推荐缓存（删除此图片的推荐 + 可能推荐此图片的其他图片）
+      await env.CACHE.delete(`recommendations:${image.slug}`);
+      await env.CACHE.delete(`recommendations:${image.id}`);
+      
+      // 清理所有推荐缓存，因为其他图片可能推荐了这张被删除的图片
+      const recCacheList = await env.CACHE.list({ prefix: 'recommendations:' });
+      if (recCacheList.keys.length > 0) {
+        await Promise.all(recCacheList.keys.map(key => env.CACHE.delete(key.name)));
+        console.log(`[AdminDelete] Cleared ${recCacheList.keys.length} recommendation caches`);
       }
       
       // 清理图片列表缓存（清理所有分页缓存）
@@ -2427,12 +2472,23 @@ async function handleAdminReanalyzeImage(request, env, imageId) {
     
     console.log(`[ReanalyzeImage] ✓ Image ${id} reanalyzed successfully`);
     
-    // 清理相关缓存
+    // 清理相关缓存（包括推荐缓存）
     const cacheKeys = await env.CACHE.list({ prefix: 'images:' });
     await Promise.all(cacheKeys.keys.map(key => env.CACHE.delete(key.name)));
+    
     if (image.slug) {
       await env.CACHE.delete(`image:${image.slug}`);
       await env.CACHE.delete(`image:${image.id}`);
+      await env.CACHE.delete(`image-json:${image.slug}`);
+      await env.CACHE.delete(`recommendations:${image.slug}`);
+      await env.CACHE.delete(`recommendations:${image.id}`);
+    }
+    
+    // 清理所有推荐缓存，因为标签变化会影响其他图片的推荐结果
+    const recCacheList = await env.CACHE.list({ prefix: 'recommendations:' });
+    if (recCacheList.keys.length > 0) {
+      await Promise.all(recCacheList.keys.map(key => env.CACHE.delete(key.name)));
+      console.log(`[ReanalyzeImage] Cleared ${recCacheList.keys.length} recommendation caches`);
     }
     
     // 获取新的标签信息
