@@ -1998,6 +1998,45 @@ function build404Page() {
 </html>`;
 }
 
+// OG Image (1200x630 SVG for social media)
+function getOGImageSVG() {
+  return `<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGrad)"/>
+  
+  <!-- Logo Icon -->
+  <g transform="translate(250, 180)">
+    <rect x="0" y="0" width="180" height="140" rx="15" fill="white" opacity="0.95"/>
+    <rect x="15" y="15" width="150" height="110" rx="10" fill="url(#bgGrad)" opacity="0.8"/>
+    <circle cx="90" cy="70" r="40" fill="white" opacity="0.4"/>
+    <circle cx="90" cy="70" r="25" fill="white" opacity="0.7"/>
+  </g>
+  
+  <!-- Text -->
+  <text x="500" y="280" font-family="Arial, sans-serif" font-size="72" font-weight="bold" fill="white">
+    ImageAI Go
+  </text>
+  <text x="500" y="360" font-family="Arial, sans-serif" font-size="36" fill="white" opacity="0.9">
+    AI-Powered Image Analysis
+  </text>
+  <text x="500" y="420" font-family="Arial, sans-serif" font-size="28" fill="white" opacity="0.8">
+    Intelligent Tagging · Smart Recommendations
+  </text>
+  
+  <!-- Decorative elements -->
+  <circle cx="150" cy="80" r="8" fill="white" opacity="0.6"/>
+  <circle cx="1050" cy="550" r="12" fill="white" opacity="0.5"/>
+  <circle cx="180" cy="500" r="6" fill="white" opacity="0.7"/>
+  <circle cx="1020" cy="100" r="10" fill="white" opacity="0.6"/>
+</svg>`;
+}
+
 // Favicon SVG
 function getFaviconSVG() {
   return `<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
