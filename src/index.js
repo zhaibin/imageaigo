@@ -1004,23 +1004,59 @@ async function handleImageDetailPage(request, env, imageSlug) {
       min-height: 100vh;
       padding: 20px;
     }
-    .container { max-width: 1400px; margin: 0 auto; }
-    .floating-back-btn {
-      position: fixed; top: 20px; right: 20px;
-      width: 45px; height: 45px;
+    .container { max-width: 1400px; margin: 0 auto; padding-top: 80px; }
+    .nav-buttons {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 999;
+      pointer-events: none;
+    }
+    .nav-buttons > * {
+      pointer-events: auto;
+    }
+    .back-btn, .home-btn {
+      width: 45px;
+      height: 45px;
       background: rgba(255,255,255,0.95);
       border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      color: #667eea; text-decoration: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #667eea;
+      text-decoration: none;
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      transition: all 0.3s ease; z-index: 999;
+      transition: all 0.3s ease;
       backdrop-filter: blur(10px);
     }
-    .floating-back-btn:hover {
-      background: white; transform: scale(1.1);
+    .back-btn:hover, .home-btn:hover {
+      background: white;
+      transform: scale(1.1);
       box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
     }
-    .floating-back-btn svg { display: block; }
+    .back-btn svg, .home-btn svg { display: block; }
+    @media (max-width: 768px) {
+      .container { padding-top: 70px; }
+      .nav-buttons {
+        top: 15px;
+        left: 15px;
+        right: 15px;
+      }
+      .back-btn, .home-btn {
+        width: 40px;
+        height: 40px;
+      }
+      .back-btn svg, .home-btn svg {
+        width: 18px;
+        height: 18px;
+      }
+    }
     
     .detail-container {
       display: grid;
@@ -1154,11 +1190,18 @@ async function handleImageDetailPage(request, env, imageSlug) {
   </style>
 </head>
 <body>
-  <a href="/" class="floating-back-btn" title="Back to Home">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M19 12H5M12 19l-7-7 7-7"/>
-    </svg>
-  </a>
+  <div class="nav-buttons">
+    <a href="javascript:history.back()" class="back-btn" title="Back">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+    </a>
+    <a href="/" class="home-btn" title="Home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+      </svg>
+    </a>
+  </div>
   <div class="container">
     <div class="detail-container">
       <div class="image-section">

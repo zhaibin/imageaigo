@@ -388,8 +388,8 @@ function getClientScript() {
         
         // 根据屏幕宽度确定基础配置
         if (screenWidth < 768) {
-            columns = 2;
-            minColumnWidth = 150;
+            columns = 1;
+            minColumnWidth = 280;
             gap = 15;
             pageSize = 10;
         } else if (screenWidth < 1024) {
@@ -686,12 +686,18 @@ function getClientScript() {
         const description = document.createElement('p');
         description.className = 'image-description';
         description.textContent = image.description || 'No description';
+        description.style.cursor = 'pointer';
+        description.onclick = () => window.location.href = '/image/' + (image.slug || image.id);
 
         const tagsContainer = document.createElement('div');
         tagsContainer.className = 'tags';
 
         if (image.tags) {
-            [...(image.tags.primary || []), ...(image.tags.subcategories || []).slice(0, 3)].forEach(tag => {
+            // 只显示1个category（level-1）和1个tag（level-2或level-3）
+            const categoryTag = (image.tags.primary || [])[0];
+            const otherTag = [...(image.tags.subcategories || []), ...(image.tags.attributes || [])][0];
+            
+            [categoryTag, otherTag].filter(Boolean).forEach(tag => {
                 const tagEl = document.createElement('span');
                 tagEl.className = \`tag level-\${tag.level}\`;
                 tagEl.textContent = tag.name;
@@ -896,11 +902,18 @@ export function buildLegalPage(title, heading, content) {
   <style>${LEGAL_STYLES}</style>
 </head>
 <body>
-  <a href="/" class="floating-back-btn" title="Back to Home">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M19 12H5M12 19l-7-7 7-7"/>
-    </svg>
-  </a>
+  <div class="nav-buttons">
+    <a href="javascript:history.back()" class="back-btn" title="Back">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 12H5M12 19l-7-7 7-7"/>
+      </svg>
+    </a>
+    <a href="/" class="home-btn" title="Home">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+      </svg>
+    </a>
+  </div>
   <div class="container">
     <header>
       <h1>${heading}</h1>
@@ -932,13 +945,20 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
   <style>${MAIN_STYLES}</style>
 </head>
 <body>
-  <a href="/" class="floating-back-btn" title="Back to Home">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M19 12H5M12 19l-7-7 7-7"/>
-    </svg>
-  </a>
   <div class="container">
     <header>
+      <div class="nav-buttons">
+        <a href="javascript:history.back()" class="back-btn" title="Back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </a>
+        <a href="/" class="home-btn" title="Home">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+          </svg>
+        </a>
+      </div>
       <h1>${escapeHtml(heading)}</h1>
       <p>${escapeHtml(subtitle)}</p>
       ${searchBox ? `
@@ -1026,8 +1046,8 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         let columns, minColumnWidth, gap, pageSize;
         
         if (screenWidth < 768) {
-            columns = 2;
-            minColumnWidth = 150;
+            columns = 1;
+            minColumnWidth = 280;
             gap = 15;
             pageSize = 10;
         } else if (screenWidth < 1024) {
@@ -1280,6 +1300,11 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         const desc = document.createElement('p');
         desc.className = 'image-description';
         desc.textContent = image.description || '';
+        desc.style.cursor = 'pointer';
+        desc.onclick = (e) => {
+            e.preventDefault();
+            window.location.href = '/image/' + image.slug;
+        };
         
         content.appendChild(likeButton);
         content.appendChild(desc);
@@ -1287,7 +1312,11 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         if (image.tags && image.tags.length > 0) {
             const tagsDiv = document.createElement('div');
             tagsDiv.className = 'tags';
-            image.tags.slice(0, 5).forEach(tag => {
+            // 只显示1个category（level-1）和1个tag（level-2或level-3）
+            const categoryTag = image.tags.find(t => t.level === 1);
+            const otherTag = image.tags.find(t => t.level > 1);
+            
+            [categoryTag, otherTag].filter(Boolean).forEach(tag => {
                 const tagLink = document.createElement('a');
                 tagLink.href = (tag.level === 1 ? '/category/' : '/tag/') + encodeURIComponent(tag.name);
                 tagLink.className = 'tag level-' + tag.level;

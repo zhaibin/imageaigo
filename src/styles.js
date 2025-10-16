@@ -237,6 +237,7 @@ button:disabled {
 .image-card:hover {
     transform: translateY(-5px);
     box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+    z-index: 10;
 }
 
 .image-card img {
@@ -534,6 +535,20 @@ button:disabled {
     .upload-section {
         padding: 20px;
     }
+
+    .url-input-group {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .url-input-group input[type="url"] {
+        width: 100%;
+    }
+
+    .url-input-group button {
+        width: 100%;
+        padding: 15px;
+    }
 }
 `;
 
@@ -578,11 +593,22 @@ ul {
   margin-left: 30px;
   margin-bottom: 20px;
 }
-/* 浮动返回按钮 */
-.floating-back-btn {
+/* 导航按钮 */
+.nav-buttons {
   position: fixed;
   top: 20px;
+  left: 20px;
   right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 999;
+  pointer-events: none;
+}
+.nav-buttons > * {
+  pointer-events: auto;
+}
+.back-btn, .home-btn {
   width: 45px;
   height: 45px;
   background: rgba(255,255,255,0.95);
@@ -594,25 +620,27 @@ ul {
   text-decoration: none;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   transition: all 0.3s ease;
-  z-index: 999;
   backdrop-filter: blur(10px);
 }
-.floating-back-btn:hover {
+.back-btn:hover, .home-btn:hover {
   background: white;
   transform: scale(1.1);
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
 }
-.floating-back-btn svg {
+.back-btn svg, .home-btn svg {
   display: block;
 }
 @media (max-width: 768px) {
-  .floating-back-btn {
+  .nav-buttons {
     top: 15px;
+    left: 15px;
     right: 15px;
+  }
+  .back-btn, .home-btn {
     width: 40px;
     height: 40px;
   }
-  .floating-back-btn svg {
+  .back-btn svg, .home-btn svg {
     width: 18px;
     height: 18px;
   }
@@ -648,26 +676,33 @@ body {
   .container { max-width: 1800px; }
 }
 header {
+  position: relative;
   text-align: center;
   color: white;
   margin-bottom: 40px;
+  padding: 60px 120px 20px;
 }
 h1, h2, h3 { color: white; }
-.back-link {
-  display: inline-block;
-  color: white;
-  text-decoration: none;
-  padding: 10px 20px;
-  background: rgba(255,255,255,0.2);
-  border-radius: 20px;
-  margin-bottom: 20px;
-  transition: background 0.3s;
+h1 {
+  word-wrap: break-word;
+  max-width: 100%;
 }
-/* 浮动返回按钮 */
-.floating-back-btn {
-  position: fixed;
+/* 导航按钮容器 - 与标题同行 */
+.nav-buttons {
+  position: absolute;
   top: 20px;
-  right: 20px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 10;
+  pointer-events: none;
+}
+.nav-buttons > * {
+  pointer-events: auto;
+}
+.back-btn, .home-btn {
   width: 45px;
   height: 45px;
   background: rgba(255,255,255,0.95);
@@ -679,27 +714,33 @@ h1, h2, h3 { color: white; }
   text-decoration: none;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   transition: all 0.3s ease;
-  z-index: 999;
   backdrop-filter: blur(10px);
 }
-.floating-back-btn:hover {
+.back-btn:hover, .home-btn:hover {
   background: white;
   transform: scale(1.1);
   box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
 }
-.floating-back-btn svg {
+.back-btn svg, .home-btn svg {
   display: block;
 }
 @media (max-width: 768px) {
-  .floating-back-btn {
+  header {
+    padding: 60px 70px 20px;
+  }
+  .nav-buttons {
     top: 15px;
-    right: 15px;
+  }
+  .back-btn, .home-btn {
     width: 40px;
     height: 40px;
   }
-  .floating-back-btn svg {
+  .back-btn svg, .home-btn svg {
     width: 18px;
     height: 18px;
+  }
+  h1 {
+    font-size: 1.8rem;
   }
 }
 .gallery {
@@ -739,7 +780,10 @@ h1, h2, h3 { color: white; }
     width: 100%;
     box-sizing: border-box;
 }
-.image-card:hover { transform: translateY(-5px); }
+.image-card:hover { 
+  transform: translateY(-5px);
+  z-index: 10;
+}
 .image-card img {
   width: 100%;
   height: auto;
