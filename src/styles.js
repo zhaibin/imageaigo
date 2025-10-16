@@ -209,8 +209,9 @@ button:disabled {
 .gallery {
     position: relative;
     width: 100%;
-    overflow: hidden;
+    overflow: visible;
     /* JavaScript会动态设置height */
+    padding-top: 10px; /* 为第一行悬停效果留出空间 */
 }
 
 .image-card {
@@ -238,6 +239,7 @@ button:disabled {
     transform: translateY(-5px);
     box-shadow: 0 15px 40px rgba(0,0,0,0.3);
     z-index: 10;
+    position: relative; /* 确保z-index生效 */
 }
 
 .image-card img {
@@ -795,6 +797,7 @@ h1, h2, h3 { color: white; }
   columns: 4 280px;
   column-gap: 20px;
   width: 100%;
+  padding-top: 10px; /* 为第一行悬停效果留出空间 */
 }
 @media (max-width: 768px) {
   .gallery {
@@ -830,7 +833,9 @@ h1, h2, h3 { color: white; }
 }
 .image-card:hover { 
   transform: translateY(-5px);
+  box-shadow: 0 15px 40px rgba(0,0,0,0.3);
   z-index: 10;
+  position: relative; /* 确保z-index生效 */
 }
 .image-card img {
   width: 100%;
