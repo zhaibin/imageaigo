@@ -211,6 +211,10 @@ export default {
         return await handleAdminTags(request, env);
       }
 
+      if (path === '/api/admin/categories' && request.method === 'GET') {
+        return await handleAdminCategories(request, env);
+      }
+
       if (path.startsWith('/api/admin/tag/') && request.method === 'DELETE') {
         const tagId = path.replace('/api/admin/tag/', '');
         return await handleAdminDeleteTag(request, env, tagId);
@@ -1976,18 +1980,41 @@ async function handleAdminImages(request, env) {
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
     const search = url.searchParams.get('search') || '';
+    const category = url.searchParams.get('category') || '';
+    const tag = url.searchParams.get('tag') || '';
     const offset = (page - 1) * limit;
     
     let query = `
-      SELECT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
+      SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
         (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
       FROM images i
     `;
     let params = [];
+    let whereConditions = [];
     
+    // 按分类或标签筛选
+    if (category || tag) {
+      query += ` JOIN image_tags it ON i.id = it.image_id
+                 JOIN tags t ON it.tag_id = t.id`;
+      
+      if (category) {
+        whereConditions.push('t.name = ? AND t.level = 1');
+        params.push(category);
+      } else if (tag) {
+        whereConditions.push('t.name = ?');
+        params.push(tag);
+      }
+    }
+    
+    // 搜索条件
     if (search) {
-      query += ` WHERE i.description LIKE ? OR i.id = ?`;
+      whereConditions.push('(i.description LIKE ? OR i.id = ?)');
       params.push(`%${search}%`, parseInt(search) || 0);
+    }
+    
+    // 组合 WHERE 条件
+    if (whereConditions.length > 0) {
+      query += ` WHERE ` + whereConditions.join(' AND ');
     }
     
     query += ` ORDER BY i.created_at DESC LIMIT ? OFFSET ?`;
@@ -2163,6 +2190,37 @@ async function handleAdminDeleteImage(request, env, imageId) {
   }
 }
 
+// 获取分类列表（管理后台）
+async function handleAdminCategories(request, env) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    const { results } = await env.DB.prepare(`
+      SELECT t.id, t.name, COUNT(DISTINCT it.image_id) as count
+      FROM tags t
+      LEFT JOIN image_tags it ON t.id = it.tag_id
+      WHERE t.level = 1
+      GROUP BY t.id, t.name
+      ORDER BY count DESC, t.name ASC
+    `).all();
+    
+    return new Response(JSON.stringify({ categories: results }), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('[AdminCategories] Error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 // 获取标签列表（管理后台）
 async function handleAdminTags(request, env) {
   if (!await verifyAdminToken(request, env)) {
@@ -2175,6 +2233,8 @@ async function handleAdminTags(request, env) {
   try {
     const url = new URL(request.url);
     const search = url.searchParams.get('search') || '';
+    const limitParam = url.searchParams.get('limit');
+    const limit = limitParam ? parseInt(limitParam) : 200;
     
     let query = `
       SELECT t.id, t.name, t.level, COUNT(it.image_id) as usage_count
@@ -2188,7 +2248,8 @@ async function handleAdminTags(request, env) {
       params.push(`%${search}%`);
     }
     
-    query += ` GROUP BY t.id, t.name, t.level ORDER BY usage_count DESC, t.name ASC LIMIT 200`;
+    query += ` GROUP BY t.id, t.name, t.level ORDER BY usage_count DESC, t.name ASC LIMIT ?`;
+    params.push(limit);
     
     const { results: tags } = await env.DB.prepare(query).bind(...params).all();
     

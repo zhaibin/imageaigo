@@ -571,8 +571,17 @@ export function buildAdminDashboard() {
       <div class="table-container">
         <div class="table-header">
           <h2>图片列表</h2>
-          <div style="display: flex; gap: 10px; align-items: center;">
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
             <input type="search" class="search-box" id="imageSearch" placeholder="搜索描述或ID...">
+            <select id="categoryFilter" class="search-box" style="width: 180px;" onchange="filterByCategory(this.value)">
+              <option value="">全部分类</option>
+            </select>
+            <select id="tagFilter" class="search-box" style="width: 180px;" onchange="filterByTag(this.value)">
+              <option value="">全部标签</option>
+            </select>
+            <button onclick="clearFilters()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 500; white-space: nowrap;">
+              清除筛选
+            </button>
             <button onclick="showBatchUpload()" style="background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 500; white-space: nowrap;">
               📤 批量上传
             </button>
@@ -731,6 +740,9 @@ export function buildAdminDashboard() {
     const API_BASE = '';
     let currentPage = 1;
     let currentTab = 'images';
+    let currentCategory = '';
+    let currentTag = '';
+    let currentSearch = '';
     
     // 检查认证
     function checkAuth() {
@@ -789,11 +801,14 @@ export function buildAdminDashboard() {
       
       let url = \`/api/admin/images?page=\${page}&limit=20\`;
       if (search) url += \`&search=\${encodeURIComponent(search)}\`;
+      if (currentCategory) url += \`&category=\${encodeURIComponent(currentCategory)}\`;
+      if (currentTag) url += \`&tag=\${encodeURIComponent(currentTag)}\`;
       
       const data = await apiRequest(url);
       if (!data) return;
       
       currentPage = page;
+      currentSearch = search;
       
       if (data.images.length === 0) {
         content.innerHTML = '<div style="padding: 40px; text-align: center; color: #666;">暂无图片</div>';
@@ -838,7 +853,7 @@ export function buildAdminDashboard() {
                   <div style="display: flex; flex-direction: column; gap: 5px;">
                     <div>
                       <button class="btn btn-small btn-primary" onclick="viewImage('\${img.slug}')">查看</button>
-                      <button class="btn btn-small btn-warning" onclick="reanalyzeImage(\${img.id})" title="重新分析并生成标签和描述">🔄</button>
+                      <button class="btn btn-small btn-warning" onclick="reanalyzeImage(\${img.id})" title="重新分析并生成标签和描述">重新分析</button>
                     </div>
                     <div>
                       <button class="btn btn-small btn-danger" onclick="deleteImage(\${img.id})">删除</button>
@@ -924,18 +939,19 @@ export function buildAdminDashboard() {
     
     // 重新分析图片
     async function reanalyzeImage(imageId) {
-      if (!confirm('确定要重新分析这张图片吗？\\n这将使用AI重新生成描述和标签。')) return;
-      
-      // 显示加载状态
+      // 直接分析，不弹确认框
       const row = document.getElementById(\`image-row-\${imageId}\`);
       const originalContent = row.innerHTML;
+      
+      // 显示加载状态
       row.innerHTML = '<td colspan="8" style="text-align: center; padding: 20px;"><div class="spinner" style="margin: 0 auto;"></div><p>正在重新分析...</p></td>';
       
       try {
         const result = await apiRequest(\`/api/admin/image/\${imageId}/reanalyze\`, { method: 'POST' });
         
         if (result && result.success) {
-          loadImages(currentPage);
+          // 只刷新当前行，不整页刷新
+          await refreshImageRow(imageId);
           loadStats();
         } else {
           throw new Error(result?.error || '重新分析失败');
@@ -943,6 +959,50 @@ export function buildAdminDashboard() {
       } catch (error) {
         row.innerHTML = originalContent;
         console.error('重新分析失败:', error);
+      }
+    }
+    
+    // 刷新单行图片数据
+    async function refreshImageRow(imageId) {
+      try {
+        const imageData = await apiRequest(\`/api/admin/image/\${imageId}\`);
+        if (!imageData) return;
+        
+        const img = imageData.image;
+        const tags = imageData.tags || [];
+        
+        const tagsHTML = tags && tags.length > 0 
+          ? tags.slice(0, 3).map(tag => \`<span class="tag level-\${tag.level}" title="\${escapeHtml(tag.name)}">\${escapeHtml(tag.name)}</span>\`).join('')
+          : '<span style="color: #999; font-size: 0.85rem;">无标签</span>';
+        
+        const row = document.getElementById(\`image-row-\${imageId}\`);
+        row.innerHTML = \`
+          <td>#\${img.id}</td>
+          <td><img src="\${img.image_url}" class="img-preview" onclick="showImageDetail(\${img.id})" /></td>
+          <td style="max-width: 230px;">\${escapeHtml(img.description || '-').substring(0, 70)}\${img.description && img.description.length > 70 ? '...' : ''}</td>
+          <td style="max-width: 180px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              \${tagsHTML}
+              \${tags.length > 3 ? \`<span style="color: #999; font-size: 0.85rem;">+\${tags.length - 3}</span>\` : ''}
+            </div>
+          </td>
+          <td>\${img.width && img.height ? \`\${img.width}×\${img.height}\` : '-'}</td>
+          <td>❤️ \${img.likes_count || 0}</td>
+          <td style="font-size: 0.85rem;">\${new Date(img.created_at).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+              <div>
+                <button class="btn btn-small btn-primary" onclick="viewImage('\${img.slug}')">查看</button>
+                <button class="btn btn-small btn-warning" onclick="reanalyzeImage(\${img.id})" title="重新分析并生成标签和描述">重新分析</button>
+              </div>
+              <div>
+                <button class="btn btn-small btn-danger" onclick="deleteImage(\${img.id})">删除</button>
+              </div>
+            </div>
+          </td>
+        \`;
+      } catch (error) {
+        console.error('刷新行失败:', error);
       }
     }
     
@@ -1154,10 +1214,65 @@ export function buildAdminDashboard() {
       return div.innerHTML;
     }
     
+    // 按分类筛选
+    function filterByCategory(category) {
+      currentCategory = category;
+      currentTag = '';  // 清空标签筛选
+      document.getElementById('tagFilter').value = '';
+      loadImages(1, currentSearch);
+    }
+    
+    // 按标签筛选
+    function filterByTag(tag) {
+      currentTag = tag;
+      currentCategory = '';  // 清空分类筛选
+      document.getElementById('categoryFilter').value = '';
+      loadImages(1, currentSearch);
+    }
+    
+    // 清除所有筛选
+    function clearFilters() {
+      currentCategory = '';
+      currentTag = '';
+      currentSearch = '';
+      document.getElementById('categoryFilter').value = '';
+      document.getElementById('tagFilter').value = '';
+      document.getElementById('imageSearch').value = '';
+      loadImages(1);
+    }
+    
+    // 加载分类和标签选项
+    async function loadFilterOptions() {
+      // 加载分类（level 1 tags）
+      const categoriesData = await apiRequest('/api/admin/categories');
+      if (categoriesData && categoriesData.categories) {
+        const categorySelect = document.getElementById('categoryFilter');
+        categoriesData.categories.forEach(cat => {
+          const option = document.createElement('option');
+          option.value = cat.name;
+          option.textContent = \`\${cat.name} (\${cat.count})\`;
+          categorySelect.appendChild(option);
+        });
+      }
+      
+      // 加载常用标签（所有 level）
+      const tagsData = await apiRequest('/api/admin/tags?limit=100');
+      if (tagsData && tagsData.tags) {
+        const tagSelect = document.getElementById('tagFilter');
+        tagsData.tags.forEach(tag => {
+          const option = document.createElement('option');
+          option.value = tag.name;
+          option.textContent = \`\${tag.name} (L\${tag.level}, \${tag.usage_count})\`;
+          tagSelect.appendChild(option);
+        });
+      }
+    }
+    
     // 搜索
     document.getElementById('imageSearch')?.addEventListener('input', (e) => {
       clearTimeout(window.searchTimeout);
       window.searchTimeout = setTimeout(() => {
+        currentSearch = e.target.value;
         loadImages(1, e.target.value);
       }, 500);
     });
@@ -1174,6 +1289,7 @@ export function buildAdminDashboard() {
       if (!checkAuth()) return;
       loadStats();
       loadImages();
+      loadFilterOptions();
     });
     
     // 批量上传功能
