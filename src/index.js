@@ -1068,7 +1068,8 @@ async function handleImageDetailPage(request, env, imageSlug) {
       "@type": "Organization",
       "name": "ImageAI Go"
     },
-    "copyrightNotice": "ImageAI Go",
+    "creditText": "ImageAI Go - AI-Powered Image Analysis Platform",
+    "copyrightNotice": "© 2024 ImageAI Go. All rights reserved.",
     "license": "https://imageaigo.cc/terms",
     "acquireLicensePage": "https://imageaigo.cc/terms",
     "keywords": tags.map(t => t.name).join(', '),
