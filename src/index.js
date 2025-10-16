@@ -1044,22 +1044,46 @@ async function handleImageDetailPage(request, env, imageSlug) {
     </a>
   `).join('');
   
-  // 准备结构化数据
+  // 准备结构化数据 - 完整 URL 和标准格式
+  const fullImageUrl = image.image_url.startsWith('http') 
+    ? image.image_url 
+    : `https://imageaigo.cc${image.image_url}`;
+  
   const imageSchema = {
     "@context": "https://schema.org",
     "@type": "ImageObject",
-    "contentUrl": image.image_url,
-    "url": `https://imageaigo.cc/image/${image.slug}`,
+    "name": image.description ? image.description.substring(0, 100) : 'AI-analyzed image',
     "description": image.description || 'AI-analyzed image',
-    "datePublished": image.created_at,
+    "contentUrl": fullImageUrl,
+    "url": `https://imageaigo.cc/image/${image.slug}`,
+    "thumbnailUrl": fullImageUrl,
+    "datePublished": new Date(image.created_at).toISOString(),
+    "uploadDate": new Date(image.created_at).toISOString(),
     "author": {
+      "@type": "Organization",
+      "name": "ImageAI Go",
+      "url": "https://imageaigo.cc"
+    },
+    "creator": {
       "@type": "Organization",
       "name": "ImageAI Go"
     },
+    "copyrightNotice": "ImageAI Go",
+    "license": "https://imageaigo.cc/terms",
+    "acquireLicensePage": "https://imageaigo.cc/terms",
     "keywords": tags.map(t => t.name).join(', '),
-    "thumbnailUrl": image.image_url,
-    "width": image.width || 0,
-    "height": image.height || 0
+    "width": {
+      "@type": "QuantitativeValue",
+      "value": image.width || 0,
+      "unitCode": "E37"
+    },
+    "height": {
+      "@type": "QuantitativeValue",
+      "value": image.height || 0,
+      "unitCode": "E37"
+    },
+    "encodingFormat": "image/jpeg",
+    "inLanguage": "en"
   };
   
   // 完全重新设计的详情页HTML
