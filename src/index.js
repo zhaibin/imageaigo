@@ -124,6 +124,16 @@ export default {
         });
       }
 
+      // OG Image placeholder (返回 SVG)
+      if (path === '/og-image.jpg') {
+        return new Response(getOGImageSVG(), {
+          headers: {
+            'Content-Type': 'image/svg+xml',
+            'Cache-Control': 'public, max-age=31536000'
+          }
+        });
+      }
+
       // R2 images
       if (path.startsWith('/r2/')) {
         return await handleR2Image(request, env, path);
@@ -250,7 +260,11 @@ export default {
         return await handleGetImageJson(imageSlug, env);
       }
 
-      return new Response('Not Found', { status: 404 });
+      // 404 页面
+      return new Response(build404Page(), { 
+        status: 404,
+        headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+      });
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(`[${requestId}] Error (${duration}ms):`, error);
@@ -1126,6 +1140,24 @@ async function handleImageDetailPage(request, env, imageSlug) {
   <script type="application/ld+json">
   ${JSON.stringify(imageSchema)}
   </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "ImageAI Go",
+    "url": "https://imageaigo.cc",
+    "logo": "https://imageaigo.cc/favicon.svg",
+    "description": "AI-powered image tagging and analysis platform",
+    "sameAs": [
+      "https://github.com/zhaibin/imageaigo"
+    ],
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "contactType": "Customer Support",
+      "email": "support@imageaigo.cc"
+    }
+  }
+  </script>
   
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
@@ -1468,15 +1500,36 @@ async function handleImageDetailPage(request, env, imageSlug) {
 }
 
 async function handleTagPage(request, env, tagName) {
+  // 获取标签信息和图片数量
+  const tagInfo = await env.DB.prepare(`
+    SELECT t.id, t.name, t.level, COUNT(DISTINCT it.image_id) as count
+    FROM tags t
+    LEFT JOIN image_tags it ON t.id = it.tag_id
+    WHERE t.name = ?
+    GROUP BY t.id, t.name, t.level
+  `).bind(tagName).first();
+  
+  const count = tagInfo?.count || 0;
+  const level = tagInfo?.level || 2;
+  
   const html = buildPageTemplate({
     title: `${tagName} Images | ImageAI Go`,
-    description: `Browse images tagged with "${tagName}".`,
+    description: `Browse ${count} images tagged with "${tagName}". AI-analyzed photos featuring ${tagName.toLowerCase()}.`,
     heading: `#${tagName}`,
-    subtitle: `Explore images with this tag`,
+    subtitle: `${count} images · Level ${level} tag`,
     content: '',
     canonical: `https://imageaigo.cc/tag/${encodeURIComponent(tagName)}`,
     pageType: 'tag',
-    pageParams: { tag: tagName }
+    pageParams: { tag: tagName },
+    structuredData: {
+      "@context": "https://schema.org",
+      "@type": "CollectionPage",
+      "name": `${tagName} Tagged Images`,
+      "description": `Collection of images tagged with ${tagName}`,
+      "url": `https://imageaigo.cc/tag/${encodeURIComponent(tagName)}`,
+      "keywords": tagName,
+      "numberOfItems": count
+    }
   });
   
   return new Response(html, {
@@ -1487,15 +1540,36 @@ async function handleTagPage(request, env, tagName) {
 async function handleCategoryPage(request, env, path) {
   const category = decodeURIComponent(path.replace('/category/', '').replace('.html', ''));
   
+  // 获取分类图片数量
+  const { count } = await env.DB.prepare(`
+    SELECT COUNT(DISTINCT i.id) as count
+    FROM images i
+    JOIN image_tags it ON i.id = it.image_id
+    JOIN tags t ON it.tag_id = t.id
+    WHERE t.name = ? AND t.level = 1
+  `).bind(category).first();
+  
   const html = buildPageTemplate({
     title: `${category} Images - ImageAI Go`,
-    description: `Browse ${category} images analyzed by AI.`,
+    description: `Browse ${count || 0} ${category} images analyzed by AI. Discover stunning ${category.toLowerCase()} photos with intelligent tagging.`,
     heading: `${category} Gallery`,
-    subtitle: `Explore ${category} images`,
+    subtitle: `Explore ${count || 0} ${category} images`,
     content: '',
     canonical: `https://imageaigo.cc/category/${encodeURIComponent(category)}`,
     pageType: 'category',
-    pageParams: { category: category }
+    pageParams: { category: category },
+    structuredData: {
+      "@context": "https://schema.org",
+      "@type": "CollectionPage",
+      "name": `${category} Images`,
+      "description": `Collection of ${category} images analyzed by AI`,
+      "url": `https://imageaigo.cc/category/${encodeURIComponent(category)}`,
+      "about": {
+        "@type": "Thing",
+        "name": category
+      },
+      "numberOfItems": count || 0
+    }
   });
   
   return new Response(html, {
@@ -1791,6 +1865,137 @@ Allow: /
 
 User-agent: Slurp
 Allow: /`;
+}
+
+// 404 Page
+function build404Page() {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 - Page Not Found | ImageAI Go</title>
+  <meta name="robots" content="noindex, nofollow">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 20px;
+      padding: 60px 40px;
+      max-width: 500px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .error-code {
+      font-size: 8rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      margin-bottom: 20px;
+    }
+    h1 {
+      color: #333;
+      font-size: 2rem;
+      margin-bottom: 15px;
+    }
+    p {
+      color: #666;
+      font-size: 1.1rem;
+      margin-bottom: 30px;
+      line-height: 1.6;
+    }
+    .links {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 12px 30px;
+      border-radius: 25px;
+      text-decoration: none;
+      font-weight: 600;
+      transition: all 0.3s;
+      display: inline-block;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+    }
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+    .suggestions {
+      margin-top: 40px;
+      padding-top: 30px;
+      border-top: 1px solid #e0e0e0;
+    }
+    .suggestions h2 {
+      color: #333;
+      font-size: 1.2rem;
+      margin-bottom: 15px;
+    }
+    .suggestions ul {
+      list-style: none;
+      padding: 0;
+    }
+    .suggestions li {
+      margin: 8px 0;
+    }
+    .suggestions a {
+      color: #667eea;
+      text-decoration: none;
+      font-size: 1rem;
+    }
+    .suggestions a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="error-code">404</div>
+    <h1>Page Not Found</h1>
+    <p>Oops! The page you're looking for doesn't exist. It might have been moved or deleted.</p>
+    
+    <div class="links">
+      <a href="/" class="btn btn-primary">🏠 Go Home</a>
+      <a href="/images" class="btn btn-secondary">📸 Browse Images</a>
+      <a href="/search" class="btn btn-secondary">🔍 Search</a>
+    </div>
+    
+    <div class="suggestions">
+      <h2>Quick Links</h2>
+      <ul>
+        <li><a href="/">Home - Upload & Analyze Images</a></li>
+        <li><a href="/images">Gallery - Browse All Images</a></li>
+        <li><a href="/search">Search - Find Images</a></li>
+        <li><a href="/about">About - Learn More</a></li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>`;
 }
 
 // Favicon SVG

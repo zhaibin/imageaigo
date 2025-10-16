@@ -35,11 +35,21 @@ export function buildMainHTML() {
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://imageaigo.cc/">
     <meta property="og:title" content="ImageAI Go - AI-Powered Image Tagging">
-    <meta property="og:description" content="Upload images and get instant AI analysis">
+    <meta property="og:description" content="Upload images and get instant AI analysis with intelligent hierarchical tags">
     <meta property="og:site_name" content="ImageAI Go">
+    <meta property="og:image" content="https://imageaigo.cc/og-image.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="ImageAI Go - AI-Powered Image Analysis Platform">
+    <meta property="og:locale" content="en_US">
     
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:site" content="@ImageAIGo">
+    <meta property="twitter:title" content="ImageAI Go - AI-Powered Image Tagging">
+    <meta property="twitter:description" content="Upload images and get instant AI analysis with intelligent hierarchical tags">
+    <meta property="twitter:image" content="https://imageaigo.cc/og-image.jpg">
+    <meta property="twitter:image:alt" content="ImageAI Go Platform">
     
     <!-- Canonical -->
     <link rel="canonical" href="https://imageaigo.cc/">
@@ -51,11 +61,47 @@ export function buildMainHTML() {
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "ImageAI Go",
+      "alternateName": "ImageAI Go - AI Image Analysis",
+      "url": "https://imageaigo.cc",
+      "description": "AI-powered image tagging and analysis platform",
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://imageaigo.cc/search?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      },
+      "publisher": {
+        "@type": "Organization",
+        "name": "ImageAI Go",
+        "url": "https://imageaigo.cc",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://imageaigo.cc/favicon.svg",
+          "width": 64,
+          "height": 64
+        }
+      }
+    }
+    </script>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
       "@type": "WebApplication",
       "name": "ImageAI Go",
       "description": "AI-powered image tagging and analysis",
       "url": "https://imageaigo.cc",
-      "applicationCategory": "MultimediaApplication"
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "Web Browser",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": "AI image analysis, Automatic tagging, Smart recommendations, Image gallery"
     }
     </script>
     
@@ -971,7 +1017,17 @@ export function buildLegalPage(title, heading, content) {
 </html>`;
 }
 
-export function buildPageTemplate({ title, description, heading, subtitle, content, canonical, ogImage, searchBox = false, searchQuery = '', pageType = 'page', pageParams = {} }) {
+export function buildPageTemplate({ title, description, heading, subtitle, content, canonical, ogImage, searchBox = false, searchQuery = '', pageType = 'page', pageParams = {}, structuredData = null }) {
+  // 生成关键词
+  let keywords = 'AI image analysis, image tagging, photo organization';
+  if (pageType === 'category' && pageParams.category) {
+    keywords = `${pageParams.category}, ${pageParams.category} images, AI ${pageParams.category} analysis, ${keywords}`;
+  } else if (pageType === 'tag' && pageParams.tag) {
+    keywords = `${pageParams.tag}, ${pageParams.tag} photos, ${keywords}`;
+  } else if (pageType === 'search') {
+    keywords = `image search, photo search, ${keywords}`;
+  }
+  
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -979,6 +1035,7 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)}</title>
   <meta name="description" content="${escapeHtml(description)}">
+  <meta name="keywords" content="${keywords}">
   <link rel="canonical" href="${canonical}">
   
   <!-- Open Graph -->
@@ -987,13 +1044,24 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
   <meta property="og:title" content="${escapeHtml(title)}">
   <meta property="og:description" content="${escapeHtml(description)}">
   <meta property="og:site_name" content="ImageAI Go">
-  ${ogImage ? `<meta property="og:image" content="${ogImage}">` : ''}
+  <meta property="og:image" content="${ogImage || 'https://imageaigo.cc/og-image.jpg'}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="en_US">
   
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escapeHtml(title)}">
   <meta name="twitter:description" content="${escapeHtml(description)}">
-  ${ogImage ? `<meta name="twitter:image" content="${ogImage}">` : ''}
+  <meta name="twitter:image" content="${ogImage || 'https://imageaigo.cc/og-image.jpg'}">
+  <meta name="twitter:site" content="@ImageAIGo">
+  
+  ${structuredData ? `
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  ${JSON.stringify(structuredData)}
+  </script>
+  ` : ''}
   
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
