@@ -1,6 +1,7 @@
 name = "imageaigo"
 main = "src/index.js"
 compatibility_date = "2024-01-01"
+workers_dev = true
 
 # D1 Database
 [[d1_databases]]
@@ -38,3 +39,11 @@ dead_letter_queue = "image-processing-dlq"
 [triggers]
 crons = ["0 0 * * *"]
 
+# Custom Domain Routes
+[[routes]]
+pattern = "imageaigo.cc/*"
+zone_name = "imageaigo.cc"
+
+[[routes]]
+pattern = "www.imageaigo.cc/*"
+zone_name = "imageaigo.cc"
