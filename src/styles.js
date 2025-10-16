@@ -676,27 +676,21 @@ body {
   .container { max-width: 1800px; }
 }
 header {
-  position: relative;
   text-align: center;
   color: white;
   margin-bottom: 40px;
-  padding: 60px 120px 20px;
 }
 h1, h2, h3 { color: white; }
-h1 {
-  word-wrap: break-word;
-  max-width: 100%;
-}
-/* 导航按钮容器 - 与标题同行 */
+/* 导航按钮容器 - 固定定位 */
 .nav-buttons {
-  position: absolute;
+  position: fixed;
   top: 20px;
-  left: 0;
-  right: 0;
+  left: 20px;
+  right: 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  z-index: 10;
+  z-index: 999;
   pointer-events: none;
 }
 .nav-buttons > * {
@@ -725,11 +719,10 @@ h1 {
   display: block;
 }
 @media (max-width: 768px) {
-  header {
-    padding: 60px 70px 20px;
-  }
   .nav-buttons {
     top: 15px;
+    left: 15px;
+    right: 15px;
   }
   .back-btn, .home-btn {
     width: 40px;
@@ -738,9 +731,6 @@ h1 {
   .back-btn svg, .home-btn svg {
     width: 18px;
     height: 18px;
-  }
-  h1 {
-    font-size: 1.8rem;
   }
 }
 .gallery {
