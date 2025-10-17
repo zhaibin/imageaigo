@@ -35,7 +35,7 @@ export async function handleQueue(batch, env) {
 // 处理单个队列消息
 async function processQueueMessage(message, env) {
   const startTime = Date.now();
-  const { batchId, fileIndex, fileName, imageHash, sourceType } = message.body;
+  const { batchId, fileIndex, fileName, imageHash, sourceType, userId } = message.body;
   
   try {
     console.log(`[QueueConsumer:${batchId}:${fileIndex}] Processing ${fileName} (source: ${sourceType || 'upload'})`);
@@ -131,8 +131,8 @@ async function processQueueMessage(message, env) {
     
     analysis.dimensions = dimensions;
     
-    // 存储到数据库
-    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis);
+    // 存储到数据库（带 userId）
+    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis, userId);
     
     // 删除临时文件
     await env.R2.delete(tempKey).catch(err => 
@@ -228,7 +228,7 @@ async function updateBatchStatus(env, batchId, fileIndex, status, error = null, 
   }
 }
 
-async function storeImageAnalysis(db, imageUrl, imageHash, analysis) {
+async function storeImageAnalysis(db, imageUrl, imageHash, analysis, userId = null) {
   const { description, tags, dimensions } = analysis;
   
   // 生成 slug
@@ -236,15 +236,16 @@ async function storeImageAnalysis(db, imageUrl, imageHash, analysis) {
   
   // 插入图片记录
   const result = await db.prepare(`
-    INSERT INTO images (slug, image_url, image_hash, description, width, height, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO images (slug, image_url, image_hash, description, width, height, user_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).bind(
     slug,
     imageUrl,
     imageHash,
     description,
     dimensions?.width || null,
-    dimensions?.height || null
+    dimensions?.height || null,
+    userId
   ).run();
   
   const imageId = result.meta.last_row_id;

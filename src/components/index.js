@@ -19,7 +19,11 @@ export function ImageCard(image, lazyLoad = true) {
     width,
     height,
     likes_count = 0,
-    tags = []
+    tags = [],
+    user_id,
+    username,
+    display_name,
+    avatar_url
   } = image;
 
   // 处理标签显示（只显示1个category和1个其他标签）
@@ -30,7 +34,7 @@ export function ImageCard(image, lazyLoad = true) {
   const otherTag = allTags.find(t => t.level > 1);
   const displayTags = [categoryTag, otherTag].filter(Boolean);
 
-  // 生成标签HTML
+  // 生成标签HTML（包含点赞按钮）
   const tagsHTML = displayTags.length > 0 ? `
     <div class="tags">
       ${displayTags.map(tag => `
@@ -40,12 +44,25 @@ export function ImageCard(image, lazyLoad = true) {
           ${escapeHtml(tag.name)}
         </a>
       `).join('')}
+      ${LikeButton(id, likes_count)}
     </div>
-  ` : '';
+  ` : `<div class="tags">${LikeButton(id, likes_count)}</div>`;
 
   // 宽高比样式
   const aspectRatioStyle = width && height ? 
     `style="aspect-ratio: ${width} / ${height}"` : '';
+
+  // 用户信息HTML - 显示在右上角
+  const userHTML = username ? `
+    <a href="/user/${encodeURIComponent(username)}" class="image-user-info" onclick="event.stopPropagation()" title="${escapeHtml(display_name || username)}">
+      <img 
+        src="${avatar_url || 'https://randomuser.me/api/portraits/men/1.jpg'}" 
+        alt="${escapeHtml(display_name || username)}"
+        class="user-avatar-small"
+        onerror="this.src='https://randomuser.me/api/portraits/men/1.jpg'"
+      >
+    </a>
+  ` : '';
 
   return `
     <div class="image-card" data-image-id="${id}">
@@ -59,7 +76,7 @@ export function ImageCard(image, lazyLoad = true) {
         >
       </a>
       <div class="image-card-content">
-        ${LikeButton(id, likes_count)}
+        ${userHTML}
         <p class="image-description" onclick="window.location.href='/image/${slug || id}'">
           ${escapeHtml(description)}
         </p>

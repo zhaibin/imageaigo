@@ -745,19 +745,24 @@ function getClientScript() {
 
         const content = document.createElement('div');
         content.className = 'image-card-content';
-
-        const likeButton = document.createElement('div');
-        likeButton.className = 'like-button';
-        likeButton.innerHTML = '❤️';
-        const likeCount = document.createElement('span');
-        likeCount.className = 'like-count';
-        likeCount.textContent = image.likes_count || 0;
-        likeButton.appendChild(likeCount);
-        likeButton.onclick = (e) => {
-            e.stopPropagation();
-            toggleLike(image.id, likeButton);
-        };
-        content.appendChild(likeButton);
+        
+        // 添加用户头像 - 显示在右上角
+        if (image.username || image.display_name) {
+            const userInfo = document.createElement('a');
+            userInfo.href = '/user/' + encodeURIComponent(image.username);
+            userInfo.className = 'image-user-info';
+            userInfo.title = image.display_name || image.username;
+            userInfo.onclick = (e) => e.stopPropagation();
+            
+            const userAvatar = document.createElement('img');
+            userAvatar.src = image.avatar_url || 'https://randomuser.me/api/portraits/men/1.jpg';
+            userAvatar.alt = image.display_name || image.username;
+            userAvatar.className = 'user-avatar-small';
+            userAvatar.onerror = () => { userAvatar.src = 'https://randomuser.me/api/portraits/men/1.jpg'; };
+            
+            userInfo.appendChild(userAvatar);
+            content.appendChild(userInfo);
+        }
 
         const description = document.createElement('p');
         description.className = 'image-description';
@@ -793,6 +798,20 @@ function getClientScript() {
                 tagsContainer.appendChild(tagEl);
             });
         }
+        
+        // 添加点赞按钮到标签行
+        const likeButton = document.createElement('div');
+        likeButton.className = 'like-button';
+        likeButton.innerHTML = '❤️';
+        const likeCount = document.createElement('span');
+        likeCount.className = 'like-count';
+        likeCount.textContent = image.likes_count || 0;
+        likeButton.appendChild(likeCount);
+        likeButton.onclick = (e) => {
+            e.stopPropagation();
+            toggleLike(image.id, likeButton);
+        };
+        tagsContainer.appendChild(likeButton);
 
         content.appendChild(description);
         content.appendChild(tagsContainer);
@@ -944,6 +963,50 @@ function getClientScript() {
         }, 500);
     });
 
+    // 检查用户登录状态并显示footer导航
+    async function checkUserAuth() {
+      try {
+        const response = await fetch('/api/auth/me');
+        const data = await response.json();
+        
+        const footerUserNav = document.getElementById('footerUserNav');
+        if (!footerUserNav) return;
+        
+        if (data.success && data.user) {
+          // 已登录，显示用户信息和退出
+          footerUserNav.innerHTML = 
+            '<a href="/profile" style="color: white; margin: 0 15px; text-decoration: none;">👤 ' + (data.user.username || 'User') + '</a>' +
+            '<a href="#" onclick="logout(); return false;" style="color: white; margin: 0 15px; text-decoration: none;">Logout</a>';
+        } else {
+          // 未登录，显示登录和注册按钮
+          footerUserNav.innerHTML = 
+            '<a href="/login" style="color: white; margin: 0 15px; text-decoration: none;">Login</a>' +
+            '<a href="/register" style="color: white; margin: 0 15px; text-decoration: none;">Sign Up</a>';
+        }
+      } catch (error) {
+        console.log('[Auth] Not logged in');
+        const footerUserNav = document.getElementById('footerUserNav');
+        if (footerUserNav) {
+          footerUserNav.innerHTML = 
+            '<a href="/login" style="color: white; margin: 0 15px; text-decoration: none;">Login</a>' +
+            '<a href="/register" style="color: white; margin: 0 15px; text-decoration: none;">Sign Up</a>';
+        }
+      }
+    }
+    
+    // 退出登录
+    async function logout() {
+      if (confirm('Are you sure you want to logout?')) {
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' });
+          window.location.reload();
+        } catch (error) {
+          console.error('Logout error:', error);
+          window.location.reload();
+        }
+      }
+    }
+
     console.log('[Init] Initializing masonry layout...');
     
     // 确保DOM完全加载后再初始化
@@ -952,6 +1015,7 @@ function getClientScript() {
             initMasonry();
             loadImages(null, true);
             loadCategories();
+            checkUserAuth();
         });
     } else {
         // 延迟一帧确保gallery宽度已确定
@@ -961,6 +1025,7 @@ function getClientScript() {
             console.log('[Init] Gallery width:', gallery?.offsetWidth);
             loadImages(null, true);
             loadCategories();
+            checkUserAuth();
         });
     }
     
@@ -1101,7 +1166,7 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
       ` : ''}
     </header>
     <main class="gallery" id="gallery">
-      <!-- 图片将通过 JavaScript 动态加载 -->
+      ${content || '<!-- 图片将通过 JavaScript 动态加载 -->'}
     </main>
     
     <!-- 加载提示 -->
@@ -1406,7 +1471,7 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         const img = document.createElement('img');
         img.src = image.image_url;
         // 优化的 alt 标签 - 包含描述和关键标签
-        const imgTags = image.tags ? 
+        const imgTags = (Array.isArray(image.tags) && image.tags.length > 0) ? 
           image.tags.slice(0, 3).map(t => t.name).join(', ') : '';
         img.alt = (image.description || 'Image') + (imgTags ? ' - Tags: ' + imgTags : '');
         img.title = image.description || 'Image';
@@ -1421,18 +1486,23 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         const content = document.createElement('div');
         content.className = 'image-card-content';
         
-        const likeButton = document.createElement('div');
-        likeButton.className = 'like-button';
-        likeButton.innerHTML = '❤️';
-        likeButton.onclick = (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            toggleLike(image.id, likeButton, e);
-        };
-        const likeCount = document.createElement('span');
-        likeCount.className = 'like-count';
-        likeCount.textContent = image.likes_count || 0;
-        likeButton.appendChild(likeCount);
+        // 添加用户头像 - 显示在右上角
+        if (image.username || image.display_name) {
+            const userInfo = document.createElement('a');
+            userInfo.href = '/user/' + encodeURIComponent(image.username);
+            userInfo.className = 'image-user-info';
+            userInfo.title = image.display_name || image.username;
+            userInfo.onclick = (e) => e.stopPropagation();
+            
+            const userAvatar = document.createElement('img');
+            userAvatar.src = image.avatar_url || 'https://randomuser.me/api/portraits/men/1.jpg';
+            userAvatar.alt = image.display_name || image.username;
+            userAvatar.className = 'user-avatar-small';
+            userAvatar.onerror = () => { userAvatar.src = 'https://randomuser.me/api/portraits/men/1.jpg'; };
+            
+            userInfo.appendChild(userAvatar);
+            content.appendChild(userInfo);
+        }
         
         const desc = document.createElement('p');
         desc.className = 'image-description';
@@ -1443,10 +1513,9 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
             window.location.href = '/image/' + image.slug;
         };
         
-        content.appendChild(likeButton);
         content.appendChild(desc);
         
-        if (image.tags && image.tags.length > 0) {
+        if (Array.isArray(image.tags) && image.tags.length > 0) {
             const tagsDiv = document.createElement('div');
             tagsDiv.className = 'tags';
             // 只显示1个category（level-1）和1个tag（level-2或level-3）
@@ -1460,6 +1529,42 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
                 tagLink.textContent = tag.name;
                 tagsDiv.appendChild(tagLink);
             });
+            
+            // 添加点赞按钮到标签行
+            const likeButton = document.createElement('div');
+            likeButton.className = 'like-button';
+            likeButton.innerHTML = '❤️';
+            likeButton.onclick = (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                toggleLike(image.id, likeButton, e);
+            };
+            const likeCount = document.createElement('span');
+            likeCount.className = 'like-count';
+            likeCount.textContent = image.likes_count || 0;
+            likeButton.appendChild(likeCount);
+            tagsDiv.appendChild(likeButton);
+            
+            content.appendChild(tagsDiv);
+        } else {
+            // 如果没有标签，也显示点赞按钮
+            const tagsDiv = document.createElement('div');
+            tagsDiv.className = 'tags';
+            
+            const likeButton = document.createElement('div');
+            likeButton.className = 'like-button';
+            likeButton.innerHTML = '❤️';
+            likeButton.onclick = (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                toggleLike(image.id, likeButton, e);
+            };
+            const likeCount = document.createElement('span');
+            likeCount.className = 'like-count';
+            likeCount.textContent = image.likes_count || 0;
+            likeButton.appendChild(likeCount);
+            tagsDiv.appendChild(likeButton);
+            
             content.appendChild(tagsDiv);
         }
         
@@ -1521,17 +1626,53 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
 
     console.log('[Init] Initializing masonry layout...');
     
+    // 检查是否有预渲染的内容
+    const hasPrerenderedContent = gallery && gallery.children.length > 0;
+    
+    // 对预渲染内容进行布局
+    function layoutPrerenderedCards() {
+        if (!gallery || !hasPrerenderedContent) return;
+        
+        initMasonry();
+        const cards = Array.from(gallery.querySelectorAll('.image-card'));
+        
+        console.log('[Prerendered] Layouting', cards.length, 'cards');
+        
+        cards.forEach((card, index) => {
+            const columnIndex = getShortestColumn();
+            const left = columnIndex * (columnWidth + columnGap);
+            const top = columnHeights[columnIndex];
+            
+            card.style.left = left + 'px';
+            card.style.top = top + 'px';
+            card.style.width = columnWidth + 'px';
+            
+            const actualHeight = card.offsetHeight;
+            columnHeights[columnIndex] = top + actualHeight + columnGap;
+        });
+        
+        updateGalleryHeight();
+    }
+    
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             requestAnimationFrame(() => {
-                initMasonry();
-                loadImages();
+                if (hasPrerenderedContent) {
+                    layoutPrerenderedCards();
+                } else {
+                    initMasonry();
+                    loadImages();
+                }
             });
         });
     } else {
         requestAnimationFrame(() => {
-            initMasonry();
-            loadImages();
+            if (hasPrerenderedContent) {
+                layoutPrerenderedCards();
+            } else {
+                initMasonry();
+                loadImages();
+            }
         });
     }
   </script>

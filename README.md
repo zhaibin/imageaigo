@@ -27,7 +27,15 @@
 - **分类浏览**：自动统计各分类图片数量
 - **点赞功能**：用户可以点赞喜欢的图片
 
-### 4. 管理后台 ⭐️ 新增
+### 4. 用户认证系统 🔐 新增
+- **用户注册**：邮箱和用户名注册，密码强度验证
+- **用户登录**：Session Token 会话管理（30天有效期）
+- **密码找回**：安全的密码重置流程（Token 1小时有效）
+- **访问控制**：图片分析功能需要登录，保护核心资源
+- **会话安全**：HttpOnly Cookie、Secure Cookie、自动过期
+- **密码加密**：SHA-256 哈希加密，防止明文存储
+
+### 5. 管理后台 ⭐
 - **登录认证**：基于 Token 的安全认证系统
 - **数据统计**：实时显示图片、标签、点赞和上传统计
 - **图片管理**：查看、搜索、删除图片，查看详细信息
@@ -36,7 +44,7 @@
 - **响应式设计**：支持PC和移动端访问
 - **安全保护**：Token 24小时过期，环境变量存储密码
 
-### 5. 性能与安全
+### 6. 性能与安全
 - **多级缓存**：KV 缓存 + 图片哈希缓存，减少数据库查询（响应时间降低 80%）⭐
 - **智能压缩**：上传时自动压缩图片用于 AI 分析，原图存储到 R2
 - **防盗链保护**：R2 图片资源防盗链，仅允许本站访问
@@ -118,11 +126,26 @@ bucket_name = "imageaigo"
 ### 5. 初始化数据库
 
 ```bash
+# 在本地数据库执行 schema
+wrangler d1 execute imageaigo --local --file=schema.sql
+
 # 在远程数据库执行 schema
 wrangler d1 execute imageaigo --remote --file=schema.sql
+
+# 或使用迁移脚本（推荐）
+chmod +x migrate-user-auth.sh
+./migrate-user-auth.sh
 ```
 
-### 6. 部署
+### 6. 设置管理员密码（可选）
+
+```bash
+# 设置管理后台密码（默认为 admin123）
+wrangler secret put ADMIN_PASSWORD
+# 输入你的管理员密码
+```
+
+### 7. 部署
 
 ```bash
 # 部署到生产环境
@@ -138,15 +161,18 @@ npm run dev
 imageaigo/
 ├── src/
 │   ├── index.js           # 主入口文件，路由和业务逻辑
-│   ├── components/        # 组件系统（新增）⭐
+│   ├── components/        # 组件系统 ⭐
 │   │   └── index.js      # UI组件（ImageCard, NavButtons等）
-│   ├── templates/         # 模版系统（新增）⭐
+│   ├── templates/         # 模版系统 ⭐
 │   │   └── layout.js     # 页面布局和SEO结构化数据
-│   ├── client/            # 客户端脚本（新增）⭐
+│   ├── client/            # 客户端脚本 ⭐
 │   │   └── gallery.js    # 画廊管理类（瀑布流、无限滚动）
-│   ├── lib/               # 工具库（新增）⭐
+│   ├── lib/               # 工具库 ⭐
 │   │   ├── validation.js # 数据验证和安全检查
 │   │   └── performance.js# 性能优化工具
+│   ├── auth.js            # 用户认证核心模块 🔐 新增
+│   ├── auth-middleware.js # 认证中间件 🔐 新增
+│   ├── user-pages.js      # 用户界面页面 🔐 新增
 │   ├── admin.js           # 管理后台页面构建
 │   ├── analyzer.js        # AI 分析和图片尺寸提取
 │   ├── html-builder.js    # HTML 页面构建
@@ -162,6 +188,7 @@ imageaigo/
 ├── schema.sql             # 数据库结构
 ├── wrangler.toml          # Cloudflare Workers 配置
 ├── package.json           # 项目依赖
+├── migrate-user-auth.sh   # 用户认证数据库迁移脚本 🔐 新增
 ├── cleanup.sh             # 数据清理脚本
 ├── setup-admin.sh         # 管理后台快速设置
 ├── change-admin-password.sh # 密码修改工具
@@ -173,12 +200,40 @@ imageaigo/
 
 ## 🎯 使用方法
 
+### 用户注册与登录 🔐 新增
+
+#### 注册新账号
+
+1. 访问 `/register` 注册页面
+2. 填写用户名（3-20个字符）
+3. 填写邮箱地址
+4. 设置密码（至少8个字符，包含字母和数字）
+5. 确认密码
+6. 点击"注册"按钮
+
+#### 用户登录
+
+1. 访问 `/login` 登录页面
+2. 输入邮箱和密码
+3. 点击"登录"按钮
+4. 登录成功后会话有效期为 30 天
+
+#### 忘记密码
+
+1. 访问 `/forgot-password` 页面
+2. 输入注册时的邮箱
+3. 系统会生成重置 Token（开发环境会显示在页面上）
+4. 访问 `/reset-password?token=YOUR_TOKEN` 页面
+5. 输入新密码并确认
+6. 重置成功后需要重新登录
+
 ### 上传图片
 
 1. 访问网站首页
-2. 拖拽图片或点击上传区域选择文件
-3. 等待 AI 分析（10-30 秒）
-4. 图片会自动显示在瀑布流中
+2. **登录账号**（必须）🔐 新增
+3. 拖拽图片或点击上传区域选择文件
+4. 等待 AI 分析（10-30 秒）
+5. 图片会自动显示在瀑布流中
 
 ### 搜索图片
 

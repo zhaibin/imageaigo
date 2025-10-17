@@ -529,7 +529,7 @@ export function buildAdminDashboard() {
     <h1>🎨 ImageAI Go 管理后台</h1>
     <div class="actions">
       <span id="adminInfo"></span>
-      <button onclick="window.location.href='/'">前台首页</button>
+      <button onclick="window.location.href=&quot;/&quot;">前台首页</button>
       <button onclick="logout()">退出登录</button>
     </div>
   </div>
@@ -561,9 +561,10 @@ export function buildAdminDashboard() {
     
     <!-- 标签页 -->
     <div class="tabs">
-      <button class="tab active" onclick="switchTab('images')">图片管理</button>
-      <button class="tab" onclick="switchTab('tags')">标签管理</button>
-      <button class="tab" onclick="switchTab('system')">系统管理</button>
+      <button class="tab active" onclick="switchTab(&quot;images&quot;)">图片管理</button>
+      <button class="tab" onclick="switchTab(&quot;users&quot;)">用户管理</button>
+      <button class="tab" onclick="switchTab(&quot;tags&quot;)">标签管理</button>
+      <button class="tab" onclick="switchTab(&quot;system&quot;)">系统管理</button>
     </div>
     
     <!-- 图片管理 -->
@@ -593,6 +594,23 @@ export function buildAdminDashboard() {
             <p>加载中...</p>
           </div>
         </div>
+      </div>
+    </div>
+    
+    <!-- 用户管理 -->
+    <div id="users-tab" class="tab-content">
+      <div class="table-container">
+        <div class="table-header">
+          <h2>用户列表</h2>
+          <input type="search" class="search-box" id="userSearch" placeholder="搜索用户名或邮箱..." onkeyup="searchUsers()">
+        </div>
+        <div id="usersContent">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>加载中...</p>
+          </div>
+        </div>
+        <div class="pagination" id="userPagination"></div>
       </div>
     </div>
     
@@ -667,7 +685,7 @@ export function buildAdminDashboard() {
     <div class="modal-content" style="max-width: 800px;">
       <div class="modal-header">
         <h2>图片详情</h2>
-        <button class="close-btn" onclick="closeModal('imageModal')">&times;</button>
+        <button class="close-btn" onclick="closeModal(&quot;imageModal&quot;)">&times;</button>
       </div>
       <div id="imageModalContent"></div>
     </div>
@@ -693,7 +711,7 @@ export function buildAdminDashboard() {
     <div class="modal-content" style="max-width: 600px;">
       <div class="modal-header">
         <h2>📤 批量上传图片</h2>
-        <button class="close-btn" onclick="closeModal('batchUploadModal')">&times;</button>
+        <button class="close-btn" onclick="closeModal(&quot;batchUploadModal&quot;)">&times;</button>
       </div>
       <div style="padding: 20px;">
         <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; color: #856404;">
@@ -710,9 +728,9 @@ export function buildAdminDashboard() {
         
         <div id="batchDropZone" style="border: 3px dashed #667eea; border-radius: 12px; padding: 40px; text-align: center; background: #f8f9ff; margin-bottom: 20px; transition: all 0.3s;">
           <input type="file" id="batchFileInput" multiple accept="image/*" style="display: none;" onchange="handleBatchFilesSelected(event)">
-          <button onclick="document.getElementById('batchFileInput').click()" style="background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;">
-            选择图片
-          </button>
+            <button onclick="document.getElementById(&quot;batchFileInput&quot;).click()" style="background: #667eea; color: white; border: none; padding: 15px 30px; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 600;">
+              选择图片
+            </button>
           <p style="color: #666; margin-top: 15px;">或拖拽图片到此处</p>
         </div>
         
@@ -721,7 +739,7 @@ export function buildAdminDashboard() {
         <div id="batchUploadProgress" style="display: none; background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
             <div style="color: #667eea; font-weight: 600;">上传处理中...</div>
-            <button id="closeProgressBtn" onclick="closeUploadProgress()" style="background: #667eea; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; display: none;">
+            <button id="closeProgressBtn" class="btn btn-primary btn-small" onclick="closeUploadProgress()" style="display: none;">
               后台处理
             </button>
           </div>
@@ -794,15 +812,19 @@ export function buildAdminDashboard() {
       }
     }
     
-    // 加载图片列表
+    // 加载图片列表 - 优化版本
     async function loadImages(page = 1, search = '') {
       const content = document.getElementById('imagesContent');
-      content.innerHTML = '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
       
-      let url = \`/api/admin/images?page=\${page}&limit=20\`;
-      if (search) url += \`&search=\${encodeURIComponent(search)}\`;
-      if (currentCategory) url += \`&category=\${encodeURIComponent(currentCategory)}\`;
-      if (currentTag) url += \`&tag=\${encodeURIComponent(currentTag)}\`;
+      // 如果不是第一页，保留现有内容显示加载状态
+      if (page === 1) {
+        content.innerHTML = '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
+      }
+      
+      let url = '/api/admin/images?page=' + page + '&limit=30'; // 增加每页数量
+      if (search) url += '&search=' + encodeURIComponent(search);
+      if (currentCategory) url += '&category=' + encodeURIComponent(currentCategory);
+      if (currentTag) url += '&tag=' + encodeURIComponent(currentTag);
       
       const data = await apiRequest(url);
       if (!data) return;
@@ -815,112 +837,118 @@ export function buildAdminDashboard() {
         return;
       }
       
-      const tableHTML = \`
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>预览</th>
-              <th>描述</th>
-              <th>标签</th>
-              <th>尺寸</th>
-              <th>点赞</th>
-              <th>创建时间</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            \${data.images.map(img => {
-              const tagsHTML = img.tags && img.tags.length > 0 
-                ? img.tags.slice(0, 3).map(tag => \`<span class="tag level-\${tag.level}" title="\${escapeHtml(tag.name)}">\${escapeHtml(tag.name)}</span>\`).join('')
-                : '<span style="color: #999; font-size: 0.85rem;">无标签</span>';
-              
-              return \`
-              <tr id="image-row-\${img.id}">
-                <td>#\${img.id}</td>
-                <td><img src="\${img.image_url}" class="img-preview" onclick="showImageDetail(\${img.id})" /></td>
-                <td style="max-width: 230px;">\${escapeHtml(img.description || '-').substring(0, 70)}\${img.description && img.description.length > 70 ? '...' : ''}</td>
-                <td style="max-width: 180px;">
-                  <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                    \${tagsHTML}
-                    \${img.tag_count > 3 ? \`<span style="color: #999; font-size: 0.85rem;">+\${img.tag_count - 3}</span>\` : ''}
-                  </div>
-                </td>
-                <td>\${img.width && img.height ? \`\${img.width}×\${img.height}\` : '-'}</td>
-                <td>❤️ \${img.likes_count || 0}</td>
-                <td style="font-size: 0.85rem;">\${new Date(img.created_at).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</td>
-                <td>
-                  <div style="display: flex; flex-direction: column; gap: 5px;">
-                    <div>
-                      <button class="btn btn-small btn-primary" onclick="viewImage('\${img.slug}')">查看</button>
-                      <button class="btn btn-small btn-warning" onclick="reanalyzeImage(\${img.id})" title="重新分析并生成标签和描述">重新分析</button>
-                    </div>
-                    <div>
-                      <button class="btn btn-small btn-danger" onclick="deleteImage(\${img.id})">删除</button>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-              \`;
-            }).join('')}
-          </tbody>
-        </table>
-        <div class="pagination">
-          <button onclick="loadImages(\${page - 1})" \${page <= 1 ? 'disabled' : ''}>上一页</button>
-          <span class="page-info">第 \${page} 页</span>
-          <button onclick="loadImages(\${page + 1})" \${!data.hasMore ? 'disabled' : ''}>下一页</button>
-        </div>
-      \`;
+      // 构建表格
+      let html = '<table><thead><tr>';
+      html += '<th>ID</th><th>预览</th><th>描述</th><th>标签</th>';
+      html += '<th>尺寸</th><th>点赞</th><th>创建时间</th><th>操作</th>';
+      html += '</tr></thead><tbody>';
       
-      content.innerHTML = tableHTML;
+      // 批量构建行
+      const rows = [];
+      for (let i = 0; i < data.images.length; i++) {
+        const img = data.images[i];
+        
+        // 构建标签HTML
+        let tagsHTML = '';
+        if (img.tags && img.tags.length > 0) {
+          for (let j = 0; j < Math.min(3, img.tags.length); j++) {
+            const tag = img.tags[j];
+            tagsHTML += '<span class="tag level-' + tag.level + '">' + escapeHtml(tag.name) + '</span>';
+          }
+          if (img.tag_count > 3) {
+            tagsHTML += '<span style="color: #999; font-size: 0.85rem;">+' + (img.tag_count - 3) + '</span>';
+          }
+        } else {
+          tagsHTML = '<span style="color: #999; font-size: 0.85rem;">无标签</span>';
+        }
+        
+        // 描述
+        const desc = img.description || '-';
+        const shortDesc = desc.length > 50 ? desc.substring(0, 50) + '...' : desc;
+        
+        // 日期
+        const date = new Date(img.created_at);
+        const dateStr = (date.getMonth() + 1) + '/' + date.getDate() + ' ' + 
+                       date.getHours().toString().padStart(2, '0') + ':' + 
+                       date.getMinutes().toString().padStart(2, '0');
+        
+        let row = '<tr id="image-row-' + img.id + '">';
+        row += '<td>#' + img.id + '</td>';
+        row += '<td><img src="' + escapeHtml(img.image_url) + '" class="img-preview" onclick="showImageDetail(' + img.id + ')" loading="lazy" alt="Image ' + img.id + '"></td>';
+        row += '<td style="max-width:250px;">' + escapeHtml(shortDesc) + '</td>';
+        row += '<td style="max-width:150px;"><div style="display:flex;flex-wrap:wrap;gap:4px;">' + tagsHTML + '</div></td>';
+        row += '<td>' + (img.width && img.height ? img.width + '×' + img.height : '-') + '</td>';
+        row += '<td>❤️ ' + (img.likes_count || 0) + '</td>';
+        row += '<td style="font-size:0.85rem;">' + dateStr + '</td>';
+        row += '<td>';
+        row += '<button class="btn btn-small btn-primary" onclick="viewImage(&#39;' + escapeHtml(img.slug) + '&#39;)" style="margin-right:5px;">查看</button>';
+        row += '<button class="btn btn-small btn-warning" onclick="reanalyzeImage(' + img.id + ')" style="margin-right:5px;">重分析</button>';
+        row += '<button class="btn btn-small btn-danger" onclick="deleteImage(' + img.id + ')">删除</button>';
+        row += '</td>';
+        row += '</tr>';
+        rows.push(row);
+      }
+      
+      html += rows.join('');
+      html += '</tbody></table>';
+      
+      // 分页
+      html += '<div class="pagination">';
+      html += '<button onclick="loadImages(' + (page - 1) + ')" ' + (page <= 1 ? 'disabled' : '') + '>上一页</button>';
+      html += '<span class="page-info">第 ' + page + ' 页 (共 ' + data.images.length + ' 张)</span>';
+      html += '<button onclick="loadImages(' + (page + 1) + ')" ' + (!data.hasMore ? 'disabled' : '') + '>下一页</button>';
+      html += '</div>';
+      
+      // 一次性更新 DOM
+      content.innerHTML = html;
     }
     
     // 查看图片
     function viewImage(slug) {
-      window.open(\`/image/\${slug}\`, '_blank');
+      window.open('/image/' + slug, '_blank');
     }
     
     // 显示图片详情
     async function showImageDetail(imageId) {
-      const data = await apiRequest(\`/api/admin/image/\${imageId}\`);
+      const data = await apiRequest('/api/admin/image/' + imageId);
       if (!data) return;
       
       const img = data.image;
       const tags = data.tags || [];
       
-      const modalContent = \`
-        <div style="margin-bottom: 20px;">
-          <img src="\${img.image_url}" style="width: 100%; border-radius: 8px;" />
-        </div>
-        <div style="margin-bottom: 15px;">
-          <strong>ID:</strong> #\${img.id}
-        </div>
-        <div style="margin-bottom: 15px;">
-          <strong>Slug:</strong> \${img.slug}
-        </div>
-        <div style="margin-bottom: 15px;">
-          <strong>描述:</strong><br/>\${escapeHtml(img.description || '-')}
-        </div>
-        <div style="margin-bottom: 15px;">
-          <strong>尺寸:</strong> \${img.width}×\${img.height}
-        </div>
-        <div style="margin-bottom: 15px;">
-          <strong>点赞数:</strong> ❤️ \${img.likes_count || 0}
-        </div>
-        <div style="margin-bottom: 15px;">
-          <strong>创建时间:</strong> \${new Date(img.created_at).toLocaleString('zh-CN')}
-        </div>
-        <div style="margin-bottom: 15px;">
-          <strong>标签:</strong><br/>
-          <div style="margin-top: 8px;">
-            \${tags.map(tag => \`<span class="tag">\${escapeHtml(tag.name)} (L\${tag.level})</span>\`).join('')}
-          </div>
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 20px;">
-          <button class="btn btn-primary" onclick="viewImage('\${img.slug}')">前台查看</button>
-          <button class="btn btn-danger" onclick="deleteImage(\${img.id}); closeModal('imageModal');">删除图片</button>
-        </div>
-      \`;
+      let modalContent = '<div style="margin-bottom: 20px;">';
+      modalContent += '<img src="' + escapeHtml(img.image_url) + '" style="width: 100%; border-radius: 8px;" alt="' + escapeHtml(img.description || 'Image') + '" />';
+      modalContent += '</div>';
+      modalContent += '<div style="margin-bottom: 15px;">';
+      modalContent += '<strong>ID:</strong> #' + img.id;
+      modalContent += '</div>';
+      modalContent += '<div style="margin-bottom: 15px;">';
+      modalContent += '<strong>Slug:</strong> ' + escapeHtml(img.slug);
+      modalContent += '</div>';
+      modalContent += '<div style="margin-bottom: 15px;">';
+      modalContent += '<strong>描述:</strong><br/>' + escapeHtml(img.description || '-');
+      modalContent += '</div>';
+      modalContent += '<div style="margin-bottom: 15px;">';
+      modalContent += '<strong>尺寸:</strong> ' + img.width + '×' + img.height;
+      modalContent += '</div>';
+      modalContent += '<div style="margin-bottom: 15px;">';
+      modalContent += '<strong>点赞数:</strong> ❤️ ' + (img.likes_count || 0);
+      modalContent += '</div>';
+      modalContent += '<div style="margin-bottom: 15px;">';
+      modalContent += '<strong>创建时间:</strong> ' + new Date(img.created_at).toLocaleString('zh-CN');
+      modalContent += '</div>';
+      modalContent += '<div style="margin-bottom: 15px;">';
+      modalContent += '<strong>标签:</strong><br/>';
+      modalContent += '<div style="margin-top: 8px;">';
+      modalContent += tags.map(function(tag) {
+        return '<span class="tag">' + escapeHtml(tag.name) + ' (L' + tag.level + ')</span>';
+      }).join('');
+      modalContent += '</div>';
+      modalContent += '</div>';
+      modalContent += '<div style="display: flex; gap: 10px; margin-top: 20px;">';
+      modalContent += '<button class="btn btn-primary" onclick="viewImage(&#39;' + escapeHtml(img.slug) + '&#39;)">前台查看</button>';
+      modalContent += '<button class="btn btn-danger" onclick="deleteImage(' + img.id + '); closeModal(&quot;imageModal&quot;);">删除图片</button>';
+      modalContent += '</div>';
       
       document.getElementById('imageModalContent').innerHTML = modalContent;
       document.getElementById('imageModal').classList.add('show');
@@ -930,7 +958,7 @@ export function buildAdminDashboard() {
     async function deleteImage(imageId) {
       if (!confirm('确定要删除这张图片吗？此操作不可逆！')) return;
       
-      const result = await apiRequest(\`/api/admin/image/\${imageId}\`, { method: 'DELETE' });
+      const result = await apiRequest('/api/admin/image/' + imageId, { method: 'DELETE' });
       if (result && result.success) {
         loadImages(currentPage);
         loadStats();
@@ -940,14 +968,17 @@ export function buildAdminDashboard() {
     // 重新分析图片
     async function reanalyzeImage(imageId) {
       // 直接分析，不弹确认框
-      const row = document.getElementById(\`image-row-\${imageId}\`);
+      const row = document.getElementById('image-row-' + imageId);
       const originalContent = row.innerHTML;
       
       // 显示加载状态
       row.innerHTML = '<td colspan="8" style="text-align: center; padding: 20px;"><div class="spinner" style="margin: 0 auto;"></div><p>正在重新分析...</p></td>';
       
       try {
-        const result = await apiRequest(\`/api/admin/image/\${imageId}/reanalyze\`, { method: 'POST' });
+        const result = await apiRequest('/api/admin/image/' + imageId + '/reanalyze', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
         
         if (result && result.success) {
           // 只刷新当前行，不整页刷新
@@ -959,52 +990,193 @@ export function buildAdminDashboard() {
       } catch (error) {
         row.innerHTML = originalContent;
         console.error('重新分析失败:', error);
+        alert('重新分析失败: ' + error.message);
       }
     }
     
     // 刷新单行图片数据
     async function refreshImageRow(imageId) {
       try {
-        const imageData = await apiRequest(\`/api/admin/image/\${imageId}\`);
+        const imageData = await apiRequest('/api/admin/image/' + imageId);
         if (!imageData) return;
         
         const img = imageData.image;
         const tags = imageData.tags || [];
         
-        const tagsHTML = tags && tags.length > 0 
-          ? tags.slice(0, 3).map(tag => \`<span class="tag level-\${tag.level}" title="\${escapeHtml(tag.name)}">\${escapeHtml(tag.name)}</span>\`).join('')
-          : '<span style="color: #999; font-size: 0.85rem;">无标签</span>';
+        let tagsHTML = '';
+        if (tags && tags.length > 0) {
+          const tagItems = [];
+          for (let i = 0; i < Math.min(3, tags.length); i++) {
+            const tag = tags[i];
+            const tagName = escapeHtml(tag.name);
+            const tagLevel = tag.level || 1;
+            tagItems.push('<span class="tag level-' + tagLevel + '">' + tagName + '</span>');
+          }
+          tagsHTML = tagItems.join('');
+        } else {
+          tagsHTML = '<span style="color: #999; font-size: 0.85rem;">无标签</span>';
+        }
         
-        const row = document.getElementById(\`image-row-\${imageId}\`);
-        row.innerHTML = \`
-          <td>#\${img.id}</td>
-          <td><img src="\${img.image_url}" class="img-preview" onclick="showImageDetail(\${img.id})" /></td>
-          <td style="max-width: 230px;">\${escapeHtml(img.description || '-').substring(0, 70)}\${img.description && img.description.length > 70 ? '...' : ''}</td>
-          <td style="max-width: 180px;">
-            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-              \${tagsHTML}
-              \${tags.length > 3 ? \`<span style="color: #999; font-size: 0.85rem;">+\${tags.length - 3}</span>\` : ''}
-            </div>
-          </td>
-          <td>\${img.width && img.height ? \`\${img.width}×\${img.height}\` : '-'}</td>
-          <td>❤️ \${img.likes_count || 0}</td>
-          <td style="font-size: 0.85rem;">\${new Date(img.created_at).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'})}</td>
-          <td>
-            <div style="display: flex; flex-direction: column; gap: 5px;">
-              <div>
-                <button class="btn btn-small btn-primary" onclick="viewImage('\${img.slug}')">查看</button>
-                <button class="btn btn-small btn-warning" onclick="reanalyzeImage(\${img.id})" title="重新分析并生成标签和描述">重新分析</button>
-              </div>
-              <div>
-                <button class="btn btn-small btn-danger" onclick="deleteImage(\${img.id})">删除</button>
-              </div>
-            </div>
-          </td>
-        \`;
+        const row = document.getElementById('image-row-' + imageId);
+        if (!row) return;
+        
+        const imgUrl = escapeHtml(img.image_url || '');
+        const imgDesc = escapeHtml(img.description || '-');
+        const shortDesc = imgDesc.length > 70 ? imgDesc.substring(0, 70) + '...' : imgDesc;
+        const imgSize = (img.width && img.height) ? (img.width + '×' + img.height) : '-';
+        const imgDate = new Date(img.created_at).toLocaleString('zh-CN', {month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'});
+        
+        let html = '<td>#' + img.id + '</td>';
+        html += '<td><img src="' + imgUrl + '" class="img-preview" onclick="showImageDetail(' + img.id + ')" alt="Image ' + img.id + '" /></td>';
+        html += '<td style="max-width:250px;">' + shortDesc + '</td>';
+        html += '<td style="max-width:150px;"><div style="display:flex;flex-wrap:wrap;gap:4px;">' + tagsHTML;
+        if (tags.length > 3) {
+          html += '<span style="color: #999; font-size: 0.85rem;">+' + (tags.length - 3) + '</span>';
+        }
+        html += '</div></td>';
+        html += '<td>' + imgSize + '</td>';
+        html += '<td>❤️ ' + (img.likes_count || 0) + '</td>';
+        html += '<td style="font-size:0.85rem;">' + imgDate + '</td>';
+        html += '<td>';
+        html += '<button class="btn btn-small btn-primary" onclick="viewImage(&#39;' + escapeHtml(img.slug) + '&#39;)" style="margin-right:5px;">查看</button>';
+        html += '<button class="btn btn-small btn-warning" onclick="reanalyzeImage(' + img.id + ')" style="margin-right:5px;">重分析</button>';
+        html += '<button class="btn btn-small btn-danger" onclick="deleteImage(' + img.id + ')">删除</button>';
+        html += '</td>';
+        row.innerHTML = html;
       } catch (error) {
         console.error('刷新行失败:', error);
       }
     }
+    
+    // ========== 用户管理功能 ==========
+    
+    let currentUserPage = 1;
+    let userSearchQuery = '';
+    
+    // 加载用户列表
+    async function loadUsers(page = 1) {
+      currentUserPage = page;
+      const content = document.getElementById('usersContent');
+      content.innerHTML = '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
+      
+      try {
+        const data = await apiRequest('/api/admin/users?page=' + page + '&limit=50&search=' + encodeURIComponent(userSearchQuery));
+        
+        if (!data || !data.success) {
+          content.innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">加载失败</p>';
+          return;
+        }
+        
+        const users = data.users;
+        const pagination = data.pagination;
+        
+        if (users.length === 0) {
+          content.innerHTML = '<p style="color: #999; text-align: center; padding: 40px;">暂无用户</p>';
+          return;
+        }
+        
+        let html = '<table><thead><tr>';
+        html += '<th>ID</th><th>头像</th><th>昵称</th><th>用户名</th><th>邮箱</th>';
+        html += '<th>图片数</th><th>类型</th><th>注册时间</th><th>操作</th>';
+        html += '</tr></thead><tbody>';
+        
+        users.forEach(function(user) {
+          const avatarUrl = user.avatar_url || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user.display_name || user.username) + '&size=50';
+          const displayName = escapeHtml(user.display_name || user.username);
+          const username = escapeHtml(user.username);
+          const email = escapeHtml(user.email);
+          const userType = user.is_random ? 
+            '<span style="background: #667eea; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;">随机</span>' : 
+            '<span style="background: #10b981; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem;">真实</span>';
+          const createdAt = new Date(user.created_at).toLocaleDateString('zh-CN');
+          
+          html += '<tr>';
+          html += '<td>' + user.id + '</td>';
+          html += '<td><img src="' + escapeHtml(avatarUrl) + '" alt="' + displayName + '" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;"></td>';
+          html += '<td><strong>' + displayName + '</strong></td>';
+          html += '<td>' + username + '</td>';
+          html += '<td>' + email + '</td>';
+          html += '<td>' + (user.image_count || 0) + '</td>';
+          html += '<td>' + userType + '</td>';
+          html += '<td>' + createdAt + '</td>';
+          html += '<td>';
+          html += '<button class="btn btn-small btn-primary" data-username="' + escapeHtml(user.username) + '" onclick="viewUserPage(this.dataset.username)" style="margin-right:5px;">查看</button>';
+          html += '<button class="btn btn-small btn-danger" data-username="' + escapeHtml(user.username) + '" onclick="deleteUser(this.dataset.username)">删除</button>';
+          html += '</td>';
+          html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+        content.innerHTML = html;
+        
+        // 生成分页
+        if (pagination.totalPages > 1) {
+          let paginationHtml = '';
+          
+          if (page > 1) {
+            paginationHtml += '<button onclick="loadUsers(' + (page - 1) + ')">上一页</button>';
+          }
+          
+          paginationHtml += '<span class="page-info">第 ' + page + ' / ' + pagination.totalPages + ' 页 (共 ' + pagination.total + ' 个用户)</span>';
+          
+          if (page < pagination.totalPages) {
+            paginationHtml += '<button onclick="loadUsers(' + (page + 1) + ')">下一页</button>';
+          }
+          
+          document.getElementById('userPagination').innerHTML = paginationHtml;
+        } else {
+          document.getElementById('userPagination').innerHTML = '<span class="page-info">共 ' + pagination.total + ' 个用户</span>';
+        }
+        
+      } catch (error) {
+        console.error('Load users error:', error);
+        content.innerHTML = '<p style="color: #e74c3c; text-align: center; padding: 40px;">加载失败: ' + error.message + '</p>';
+      }
+    }
+    
+    // 搜索用户
+    function searchUsers() {
+      const search = document.getElementById('userSearch').value;
+      userSearchQuery = search;
+      loadUsers(1);
+    }
+    
+    // 查看用户主页
+    function viewUserPage(username) {
+      window.open('/user/' + encodeURIComponent(username), '_blank');
+    }
+    
+    // 删除用户
+    async function deleteUser(username) {
+      const confirmMsg = '确定要删除这个用户吗？' + String.fromCharCode(10) + String.fromCharCode(10) + 
+                         '此操作将：' + String.fromCharCode(10) + 
+                         '- 删除用户账号' + String.fromCharCode(10) + 
+                         '- 清除用户的所有会话' + String.fromCharCode(10) + 
+                         '- 图片的user_id将设为NULL（图片保留）' + String.fromCharCode(10) + String.fromCharCode(10) + 
+                         '此操作不可恢复！';
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+      
+      try {
+        const data = await apiRequest('/api/admin/user/' + encodeURIComponent(username), { 
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (data && data.success) {
+          loadUsers(currentUserPage);
+          loadStats();
+        } else {
+          alert('删除失败: ' + (data?.error || '未知错误'));
+        }
+      } catch (error) {
+        console.error('Delete user error:', error);
+        alert('删除失败: ' + error.message);
+      }
+    }
+    
+    // ========== 标签管理功能 ==========
     
     // 加载标签列表
     async function loadTags(search = '') {
@@ -1012,7 +1184,7 @@ export function buildAdminDashboard() {
       content.innerHTML = '<div class="loading"><div class="spinner"></div><p>加载中...</p></div>';
       
       let url = '/api/admin/tags';
-      if (search) url += \`?search=\${encodeURIComponent(search)}\`;
+      if (search) url += '?search=' + encodeURIComponent(search);
       
       const data = await apiRequest(url);
       if (!data) return;
@@ -1022,47 +1194,37 @@ export function buildAdminDashboard() {
         return;
       }
       
-      const tableHTML = \`
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>标签名称</th>
-              <th>级别</th>
-              <th>使用次数</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            \${data.tags.map(tag => \`
-              <tr>
-                <td>#\${tag.id}</td>
-                <td>\${escapeHtml(tag.name)}</td>
-                <td>Level \${tag.level}</td>
-                <td>\${tag.usage_count || 0} 次</td>
-                <td>
-                  <button class="btn btn-small btn-primary" onclick="viewTag('\${encodeURIComponent(tag.name)}')">查看图片</button>
-                  <button class="btn btn-small btn-danger" onclick="deleteTag(\${tag.id})">删除</button>
-                </td>
-              </tr>
-            \`).join('')}
-          </tbody>
-        </table>
-      \`;
+      let tableHTML = '<table><thead><tr>';
+      tableHTML += '<th>ID</th><th>标签名称</th><th>级别</th><th>使用次数</th><th>操作</th>';
+      tableHTML += '</tr></thead><tbody>';
+      tableHTML += data.tags.map(function(tag) {
+        let row = '<tr>';
+        row += '<td>#' + tag.id + '</td>';
+        row += '<td>' + escapeHtml(tag.name) + '</td>';
+        row += '<td>Level ' + tag.level + '</td>';
+        row += '<td>' + (tag.usage_count || 0) + ' 次</td>';
+        row += '<td>';
+        row += '<button class="btn btn-small btn-primary" onclick="viewTag(&#39;' + escapeHtml(encodeURIComponent(tag.name)) + '&#39;)" style="margin-right:5px;">查看图片</button>';
+        row += '<button class="btn btn-small btn-danger" onclick="deleteTag(' + tag.id + ')">删除</button>';
+        row += '</td>';
+        row += '</tr>';
+        return row;
+      }).join('');
+      tableHTML += '</tbody></table>';
       
       content.innerHTML = tableHTML;
     }
     
     // 查看标签
     function viewTag(tagName) {
-      window.open(\`/tag/\${tagName}\`, '_blank');
+      window.open('/tag/' + tagName, '_blank');
     }
     
     // 删除标签
     async function deleteTag(tagId) {
       if (!confirm('确定要删除这个标签吗？此操作不可逆！')) return;
       
-      const result = await apiRequest(\`/api/admin/tag/\${tagId}\`, { method: 'DELETE' });
+      const result = await apiRequest('/api/admin/tag/' + tagId, { method: 'DELETE' });
       if (result && result.success) {
         loadTags();
         loadStats();
@@ -1084,17 +1246,15 @@ export function buildAdminDashboard() {
         });
         
         if (result && result.success) {
-          resultEl.innerHTML = \`
-            <strong>✅ 同步启动成功！</strong><br>
-            <div style="margin-top: 10px; line-height: 1.8;">
-              • 已入队: \${result.queued || 0} 张<br>
-              • 跳过: \${result.skipped || 0} 张（重复）<br>
-              • 失败: \${result.failed || 0} 张<br>
-              • 总计: \${result.total || 0} 张<br>
-              <br>
-              💡 图片正在队列中后台处理，请稍后刷新查看
-            </div>
-          \`;
+          resultEl.innerHTML = '<strong>✅ 同步启动成功！</strong><br>' +
+            '<div style="margin-top: 10px; line-height: 1.8;">' +
+            '• 已入队: ' + (result.queued || 0) + ' 张<br>' +
+            '• 跳过: ' + (result.skipped || 0) + ' 张（重复）<br>' +
+            '• 失败: ' + (result.failed || 0) + ' 张<br>' +
+            '• 总计: ' + (result.total || 0) + ' 张<br>' +
+            '<br>' +
+            '💡 图片正在队列中后台处理，请稍后刷新查看' +
+            '</div>';
           resultEl.style.background = '#d4edda';
           resultEl.style.color = '#155724';
           
@@ -1155,13 +1315,13 @@ export function buildAdminDashboard() {
         if (result && result.success) {
           let message = '✅ 清理成功！';
           if (result.deleted.r2 > 0) {
-            message += \` R2: \${result.deleted.r2} 个文件\`;
+            message += ' R2: ' + result.deleted.r2 + ' 个文件';
           }
           if (result.deleted.cache > 0) {
-            message += \` | Cache: \${result.deleted.cache} 个键\`;
+            message += ' | Cache: ' + result.deleted.cache + ' 个键';
           }
           if (result.deleted.database) {
-            message += \` | Database: \${result.deleted.database}\`;
+            message += ' | Database: ' + result.deleted.database;
           }
           
           resultEl.textContent = message;
@@ -1199,6 +1359,7 @@ export function buildAdminDashboard() {
       currentTab = tab;
       
       if (tab === 'images') loadImages();
+      else if (tab === 'users') loadUsers();
       else if (tab === 'tags') loadTags();
     }
     
@@ -1250,7 +1411,7 @@ export function buildAdminDashboard() {
         categoriesData.categories.forEach(cat => {
           const option = document.createElement('option');
           option.value = cat.name;
-          option.textContent = \`\${cat.name} (\${cat.count})\`;
+          option.textContent = cat.name + ' (' + cat.count + ')';
           categorySelect.appendChild(option);
         });
       }
@@ -1262,34 +1423,49 @@ export function buildAdminDashboard() {
         tagsData.tags.forEach(tag => {
           const option = document.createElement('option');
           option.value = tag.name;
-          option.textContent = \`\${tag.name} (L\${tag.level}, \${tag.usage_count})\`;
+          option.textContent = tag.name + ' (L' + tag.level + ', ' + tag.usage_count + ')';
           tagSelect.appendChild(option);
         });
       }
     }
     
-    // 搜索
+    // 搜索 - 使用防抖优化
+    let imageSearchTimeout;
+    let tagSearchTimeout;
+    
     document.getElementById('imageSearch')?.addEventListener('input', (e) => {
-      clearTimeout(window.searchTimeout);
-      window.searchTimeout = setTimeout(() => {
+      clearTimeout(imageSearchTimeout);
+      imageSearchTimeout = setTimeout(() => {
         currentSearch = e.target.value;
         loadImages(1, e.target.value);
-      }, 500);
+      }, 300); // 减少延迟到300ms
     });
     
     document.getElementById('tagSearch')?.addEventListener('input', (e) => {
-      clearTimeout(window.searchTimeout);
-      window.searchTimeout = setTimeout(() => {
+      clearTimeout(tagSearchTimeout);
+      tagSearchTimeout = setTimeout(() => {
         loadTags(e.target.value);
-      }, 500);
+      }, 300);
     });
     
-    // 初始化
-    window.addEventListener('DOMContentLoaded', () => {
+    // 初始化 - 优化加载顺序
+    window.addEventListener('DOMContentLoaded', async () => {
       if (!checkAuth()) return;
-      loadStats();
-      loadImages();
-      loadFilterOptions();
+      
+      // 显示管理员信息
+      const token = localStorage.getItem('adminToken');
+      if (token) {
+        document.getElementById('adminInfo').textContent = '管理员';
+      }
+      
+      // 并行加载数据
+      Promise.all([
+        loadStats(),
+        loadImages(),
+        loadFilterOptions()
+      ]).catch(err => {
+        console.error('初始化失败:', err);
+      });
     });
     
     // 批量上传功能
@@ -1353,17 +1529,17 @@ export function buildAdminDashboard() {
     }
     
     function displayBatchFiles() {
-      const listHtml = batchFiles.map((file, index) => \`
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: white; border-radius: 6px; margin-bottom: 8px;">
-          <div>
-            <strong>\${file.name}</strong>
-            <span style="color: #666; margin-left: 10px;">\${(file.size / 1024 / 1024).toFixed(2)} MB</span>
-          </div>
-          <button onclick="removeBatchFile(\${index})" style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">
-            删除
-          </button>
-        </div>
-      \`).join('');
+      const listHtml = batchFiles.map((file, index) => 
+        '<div style="display: flex; justify-content: space-between; align-items: center; padding: 10px; background: white; border-radius: 6px; margin-bottom: 8px;">' +
+          '<div>' +
+            '<strong>' + escapeHtml(file.name) + '</strong>' +
+            '<span style="color: #666; margin-left: 10px;">' + (file.size / 1024 / 1024).toFixed(2) + ' MB</span>' +
+          '</div>' +
+          '<button onclick="removeBatchFile(' + index + ')" style="background: #e74c3c; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer;">' +
+            '删除' +
+          '</button>' +
+        '</div>'
+      ).join('');
       
       document.getElementById('batchFilesList').innerHTML = listHtml;
       document.getElementById('uploadBatchBtn').disabled = batchFiles.length === 0;
@@ -1414,17 +1590,16 @@ export function buildAdminDashboard() {
       try {
         const formData = new FormData();
         batchFiles.forEach((file, index) => {
-          formData.append(\`file_\${index}\`, file);
+          formData.append('file_' + index, file);
         });
         
-        progressText.innerHTML = \`
-          <div style="margin-bottom: 10px;">
-            正在上传 \${batchFiles.length} 张图片到服务器...
-          </div>
-          <div style="color: #666; font-size: 0.9rem;">
-            📤 准备上传文件
-          </div>
-        \`;
+        progressText.innerHTML = 
+          '<div style="margin-bottom: 10px;">' +
+            '正在上传 ' + batchFiles.length + ' 张图片到服务器...' +
+          '</div>' +
+          '<div style="color: #666; font-size: 0.9rem;">' +
+            '📤 准备上传文件' +
+          '</div>';
         
         const result = await apiRequest('/api/admin/batch-upload', {
           method: 'POST',
@@ -1432,15 +1607,14 @@ export function buildAdminDashboard() {
         });
         
         if (result && result.success) {
-          progressText.innerHTML = \`
-            <div style="color: #28a745; font-weight: 600; margin-bottom: 10px;">✅ 上传成功！</div>
-            <div style="color: #666; line-height: 1.6;">
-              • 已提交 \${result.count} 张图片进行后台 AI 分析<br>
-              • 预计处理时间：2-5 分钟<br>
-              • 您可以关闭此窗口，处理会在后台继续<br>
-              • 完成后刷新页面即可查看新图片
-            </div>
-          \`;
+          progressText.innerHTML = 
+            '<div style="color: #28a745; font-weight: 600; margin-bottom: 10px;">✅ 上传成功！</div>' +
+            '<div style="color: #666; line-height: 1.6;">' +
+              '• 已提交 ' + result.count + ' 张图片进行后台 AI 分析<br>' +
+              '• 预计处理时间：2-5 分钟<br>' +
+              '• 您可以关闭此窗口，处理会在后台继续<br>' +
+              '• 完成后刷新页面即可查看新图片' +
+            '</div>';
           
           // 显示关闭按钮
           closeProgressBtn.style.display = 'inline-block';
@@ -1456,16 +1630,14 @@ export function buildAdminDashboard() {
           }, 10000);
         } else {
           isUploading = false;
-          progressText.innerHTML = \`
-            <div style="color: #e74c3c;">❌ 上传失败: \${result?.error || '未知错误'}</div>
-          \`;
+          progressText.innerHTML = 
+            '<div style="color: #e74c3c;">❌ 上传失败: ' + (result?.error || '未知错误') + '</div>';
           uploadBtn.disabled = false;
         }
       } catch (error) {
         isUploading = false;
-        progressText.innerHTML = \`
-          <div style="color: #e74c3c;">❌ 上传失败: \${error.message}</div>
-        \`;
+        progressText.innerHTML = 
+          '<div style="color: #e74c3c;">❌ 上传失败: ' + error.message + '</div>';
         uploadBtn.disabled = false;
       }
     }
@@ -1522,80 +1694,81 @@ export function buildAdminDashboard() {
       
       // 检测是否疑似卡死
       const isStuck = batch.possiblyStuck || false;
-      const stuckWarning = isStuck ? \`
-        <div style="background: #fff3cd; padding: 8px; border-radius: 6px; margin-bottom: 10px; font-size: 0.8rem; color: #856404;">
-          ⚠️ 超过 \${batch.inactiveSeconds}秒 无响应，可能卡死
-        </div>
-      \` : '';
+      const stuckWarning = isStuck ? 
+        '<div style="background: #fff3cd; padding: 8px; border-radius: 6px; margin-bottom: 10px; font-size: 0.8rem; color: #856404;">' +
+          '⚠️ 超过 ' + batch.inactiveSeconds + '秒 无响应，可能卡死' +
+        '</div>' : '';
       
       // 显示当前处理的文件
-      const currentFileInfo = batch.currentFile ? \`
-        <div style="font-size: 0.75rem; color: #999; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-          正在处理: \${batch.currentFile}
-        </div>
-      \` : '';
+      const currentFileInfo = batch.currentFile ? 
+        '<div style="font-size: 0.75rem; color: #999; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">' +
+          '正在处理: ' + escapeHtml(batch.currentFile) +
+        '</div>' : '';
       
       // 判断批次类型
       const isUnsplash = batch.sourceType === 'unsplash' || batch.batchId.startsWith('unsplash_');
       const batchTypeIcon = isUnsplash ? '🌐' : '📤';
       const batchTypeName = isUnsplash ? 'Unsplash' : '批次';
       
-      return \`
-        <div style="padding: 15px; border-bottom: 1px solid #eee; \${isStuck ? 'background: #fff9e6;' : ''}">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <div style="font-weight: 600; color: #333; font-size: 0.9rem;">
-              \${batchTypeIcon} \${batchTypeName} #\${batch.batchId.split('_')[1]} (\${batch.total} 张)
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="color: #666; font-size: 0.85rem;">
-                \${minutes}:\${seconds.toString().padStart(2, '0')}
-              </span>
-              <button onclick="cancelBatch('\${batch.batchId}')" style="background: #e74c3c; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 500;">
-                取消
-              </button>
-            </div>
-          </div>
-          
-          \${stuckWarning}
-          
-          <div style="margin-bottom: 10px;">
-            <div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666; margin-bottom: 5px;">
-              <span>已处理 \${processed} / \${batch.total}</span>
-              <span>\${processedProgress}%</span>
-            </div>
-            <div style="width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden;">
-              <div style="width: \${processedProgress}%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>
-            </div>
-          </div>
-          
-          <div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8rem; color: #666; line-height: 1.8;">
-            <span style="display: flex; align-items: center; gap: 4px;">
-              <span style="color: #28a745;">✅</span> 
-              <span>成功 \${batch.completed || 0}</span>
-            </span>
-            \${(batch.skipped || 0) > 0 ? \`
-              <span style="display: flex; align-items: center; gap: 4px;">
-                <span style="color: #ffc107;">⏭️</span>
-                <span>重复 \${batch.skipped}</span>
-              </span>
-            \` : ''}
-            \${(batch.failed || 0) > 0 ? \`
-              <span style="display: flex; align-items: center; gap: 4px;">
-                <span style="color: #e74c3c;">❌</span>
-                <span>失败 \${batch.failed}</span>
-              </span>
-            \` : ''}
-            \${(batch.processing || 0) > 0 ? \`
-              <span style="display: flex; align-items: center; gap: 4px;">
-                <span style="color: #667eea;">⚙️</span>
-                <span>处理中 \${batch.processing}</span>
-              </span>
-            \` : ''}
-          </div>
-          
-          \${currentFileInfo}
-        </div>
-      \`;
+      let html = '<div style="padding: 15px; border-bottom: 1px solid #eee;' + (isStuck ? ' background: #fff9e6;' : '') + '">';
+      html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">';
+      html += '<div style="font-weight: 600; color: #333; font-size: 0.9rem;">';
+      html += batchTypeIcon + ' ' + batchTypeName + ' #' + batch.batchId.split('_')[1] + ' (' + batch.total + ' 张)';
+      html += '</div>';
+      html += '<div style="display: flex; align-items: center; gap: 8px;">';
+      html += '<span style="color: #666; font-size: 0.85rem;">';
+      html += minutes + ':' + seconds.toString().padStart(2, '0');
+      html += '</span>';
+      html += '<button onclick="cancelBatch(&#39;' + escapeHtml(batch.batchId) + '&#39;)" style="background: #e74c3c; color: white; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; font-weight: 500;">';
+      html += '取消';
+      html += '</button>';
+      html += '</div>';
+      html += '</div>';
+      
+      html += stuckWarning;
+      
+      html += '<div style="margin-bottom: 10px;">';
+      html += '<div style="display: flex; justify-content: space-between; font-size: 0.85rem; color: #666; margin-bottom: 5px;">';
+      html += '<span>已处理 ' + processed + ' / ' + batch.total + '</span>';
+      html += '<span>' + processedProgress + '%</span>';
+      html += '</div>';
+      html += '<div style="width: 100%; height: 8px; background: #e0e0e0; border-radius: 4px; overflow: hidden;">';
+      html += '<div style="width: ' + processedProgress + '%; height: 100%; background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); transition: width 0.3s;"></div>';
+      html += '</div>';
+      html += '</div>';
+      
+      html += '<div style="display: flex; flex-wrap: wrap; gap: 12px; font-size: 0.8rem; color: #666; line-height: 1.8;">';
+      html += '<span style="display: flex; align-items: center; gap: 4px;">';
+      html += '<span style="color: #28a745;">✅</span>';
+      html += '<span>成功 ' + (batch.completed || 0) + '</span>';
+      html += '</span>';
+      
+      if ((batch.skipped || 0) > 0) {
+        html += '<span style="display: flex; align-items: center; gap: 4px;">';
+        html += '<span style="color: #ffc107;">⏭️</span>';
+        html += '<span>重复 ' + batch.skipped + '</span>';
+        html += '</span>';
+      }
+      
+      if ((batch.failed || 0) > 0) {
+        html += '<span style="display: flex; align-items: center; gap: 4px;">';
+        html += '<span style="color: #e74c3c;">❌</span>';
+        html += '<span>失败 ' + batch.failed + '</span>';
+        html += '</span>';
+      }
+      
+      if ((batch.processing || 0) > 0) {
+        html += '<span style="display: flex; align-items: center; gap: 4px;">';
+        html += '<span style="color: #667eea;">⚙️</span>';
+        html += '<span>处理中 ' + batch.processing + '</span>';
+        html += '</span>';
+      }
+      
+      html += '</div>';
+      html += currentFileInfo;
+      html += '</div>';
+      
+      return html;
     }
     
     async function cancelBatch(batchId) {

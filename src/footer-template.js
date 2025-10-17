@@ -12,6 +12,8 @@ export function buildFooter() {
         <a href="/privacy" style="color: white; margin: 0 15px; text-decoration: none;">Privacy</a>
         <a href="/terms" style="color: white; margin: 0 15px; text-decoration: none;">Terms</a>
         <a href="/search" style="color: white; margin: 0 15px; text-decoration: none;">Search</a>
+        <a href="/images" style="color: white; margin: 0 15px; text-decoration: none;">Gallery</a>
+        <span id="footerUserNav"></span>
       </nav>
       <p style="margin-top: 15px; opacity: 0.8; font-size: 0.9rem;">
         Powered by Cloudflare Workers & AI | <a href="https://imageaigo.cc" style="color: white; text-decoration: none;">imageaigo.cc</a>

@@ -9,6 +9,11 @@ import { buildAdminLoginPage, buildAdminDashboard } from './admin';
 import { buildFooter } from './footer-template';
 import { handleQueue } from './queue-handler';
 import { handleUnsplashSync } from './unsplash-sync';
+import { buildLoginPage, buildRegisterPage, buildForgotPasswordPage, buildResetPasswordPage } from './user-pages';
+import { registerUser, loginUser, logoutUser, requestPasswordReset, resetPassword, getUserInfo, verifySession, changePassword } from './auth';
+import { requireAuth, createResponseWithSession, createResponseWithoutSession, optionalAuth } from './auth-middleware';
+import { handleAdminUsers, handleAdminUserDetail, handleAdminUpdateUser, handleAdminDeleteUser } from './admin-users';
+import { buildProfilePage } from './profile-page';
 
 export default {
   async fetch(request, env, ctx) {
@@ -114,6 +119,51 @@ export default {
         });
       }
 
+      // User authentication pages
+      if (path === '/login' || path === '/login.html') {
+        const message = url.searchParams.get('message') || '';
+        const error = url.searchParams.get('error') || '';
+        return new Response(buildLoginPage(message, error), {
+          headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+        });
+      }
+
+      if (path === '/register' || path === '/register.html') {
+        const message = url.searchParams.get('message') || '';
+        const error = url.searchParams.get('error') || '';
+        return new Response(buildRegisterPage(message, error), {
+          headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+        });
+      }
+
+      if (path === '/forgot-password' || path === '/forgot-password.html') {
+        const message = url.searchParams.get('message') || '';
+        const error = url.searchParams.get('error') || '';
+        return new Response(buildForgotPasswordPage(message, error), {
+          headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+        });
+      }
+
+      if (path === '/reset-password' || path === '/reset-password.html') {
+        const token = url.searchParams.get('token') || '';
+        const message = url.searchParams.get('message') || '';
+        const error = url.searchParams.get('error') || '';
+        return new Response(buildResetPasswordPage(token, message, error), {
+          headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+        });
+      }
+
+      // Profile page
+      if (path === '/profile' || path === '/profile.html') {
+        return await handleProfilePage(request, env);
+      }
+
+      // User page (public profile)
+      if (path.startsWith('/user/')) {
+        const username = decodeURIComponent(path.replace('/user/', ''));
+        return await handleUserPage(request, env, username);
+      }
+
       // Static files (favicon, logo, etc.)
       if (path === '/favicon.svg' || path === '/favicon.ico') {
         return new Response(getFaviconSVG(), {
@@ -194,6 +244,40 @@ export default {
         return await handleCleanup(request, env);
       }
 
+      // User authentication API endpoints
+      if (path === '/api/auth/register' && request.method === 'POST') {
+        return await handleUserRegister(request, env);
+      }
+
+      if (path === '/api/auth/login' && request.method === 'POST') {
+        return await handleUserLogin(request, env);
+      }
+
+      if (path === '/api/auth/logout' && request.method === 'POST') {
+        return await handleUserLogout(request, env);
+      }
+
+      if (path === '/api/auth/me' && request.method === 'GET') {
+        return await handleUserMe(request, env);
+      }
+
+      if (path === '/api/auth/forgot-password' && request.method === 'POST') {
+        return await handleUserForgotPassword(request, env);
+      }
+
+      if (path === '/api/auth/reset-password' && request.method === 'POST') {
+        return await handleUserResetPassword(request, env);
+      }
+
+      if (path === '/api/auth/change-password' && request.method === 'POST') {
+        return await handleUserChangePassword(request, env);
+      }
+
+      // Profile API endpoint
+      if (path === '/api/profile/update' && request.method === 'PUT') {
+        return await handleProfileUpdate(request, env);
+      }
+
       // Admin API endpoints
       if (path === '/api/admin/login' && request.method === 'POST') {
         return await handleAdminLogin(request, env);
@@ -253,6 +337,26 @@ export default {
       if (path.match(/^\/api\/admin\/image\/\d+\/reanalyze$/) && request.method === 'POST') {
         const imageId = path.match(/\/api\/admin\/image\/(\d+)\/reanalyze$/)[1];
         return await handleAdminReanalyzeImage(request, env, imageId);
+      }
+
+      // Admin User Management API endpoints
+      if (path === '/api/admin/users' && request.method === 'GET') {
+        return await handleAdminUsers(request, env);
+      }
+
+      if (path.match(/^\/api\/admin\/user\/[^/]+$/) && request.method === 'GET') {
+        const username = decodeURIComponent(path.match(/\/api\/admin\/user\/([^/]+)$/)[1]);
+        return await handleAdminUserDetail(request, env, username);
+      }
+
+      if (path.match(/^\/api\/admin\/user\/[^/]+$/) && request.method === 'PUT') {
+        const username = decodeURIComponent(path.match(/\/api\/admin\/user\/([^/]+)$/)[1]);
+        return await handleAdminUpdateUser(request, env, username);
+      }
+
+      if (path.match(/^\/api\/admin\/user\/[^/]+$/) && request.method === 'DELETE') {
+        const username = decodeURIComponent(path.match(/\/api\/admin\/user\/([^/]+)$/)[1]);
+        return await handleAdminDeleteUser(request, env, username);
       }
 
       if (path.startsWith('/api/image-json/')) {
@@ -414,6 +518,14 @@ async function handleAnalyze(request, env) {
   const analyzeStart = Date.now();
   
   try {
+    // 用户认证检查 - 必须登录才能分析图片
+    const auth = await requireAuth(request, env);
+    if (!auth.authorized) {
+      return auth.response;
+    }
+    
+    console.log(`[Analyze] User ${auth.user.username} (ID: ${auth.user.id}) is analyzing an image`);
+
     // 速率限制检查
     const rateLimit = await checkRateLimit(request, env);
     if (!rateLimit.allowed) {
@@ -543,9 +655,9 @@ async function handleAnalyze(request, env) {
     // Override dimensions with original image dimensions
     analysis.dimensions = originalDimensions;
 
-    // Store in database
-    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis);
-    console.log(`[DB] Stored with slug: ${slug}`);
+    // Store in database with user_id
+    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis, auth.user.id);
+    console.log(`[DB] Stored with slug: ${slug}, user_id: ${auth.user.id}`);
 
     // Cache
     const cacheData = { imageId, slug, ...analysis };
@@ -589,8 +701,10 @@ async function handleGetImages(request, env) {
 
     let query = `
       SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-        (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+        (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
+        i.user_id, u.username, u.display_name, u.avatar_url
       FROM images i
+      LEFT JOIN users u ON i.user_id = u.id
     `;
     let params = [];
 
@@ -993,33 +1107,42 @@ async function handleImagesPage(request, env) {
   const url = new URL(request.url);
   const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
   
+  // 显示随机50张图片
   const { results: images } = await env.DB.prepare(`
     SELECT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
+      i.user_id, u.username, u.display_name, u.avatar_url
     FROM images i
-    ORDER BY i.created_at DESC
-    LIMIT 50 OFFSET ?
-  `).bind((page - 1) * 50).all();
+    LEFT JOIN users u ON i.user_id = u.id
+    ORDER BY RANDOM()
+    LIMIT 50
+  `).all();
   
-  const imageCards = images.map(img => `
-    <article class="image-card">
-      <a href="/image/${img.slug}">
-        <img src="${img.image_url}" alt="${escapeHtml(img.description || 'Image')}" loading="lazy"${img.width && img.height ? ` style="aspect-ratio: ${img.width} / ${img.height}"` : ''}>
-      </a>
-      <div class="image-info">
-        <p>${escapeHtml(img.description || '')}</p>
-        <div class="likes">❤️ ${img.likes_count || 0} likes</div>
-      </div>
-    </article>
-  `).join('');
+  // 获取每张图片的标签
+  for (let img of images) {
+    const { results: tags } = await env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t
+      JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+      LIMIT 5
+    `).bind(img.id).all();
+    img.tags = tags;
+  }
+  
+  // 使用 ImageCard 组件渲染图片
+  const { ImageCard } = await import('./components/index.js');
+  
+  const imageCards = images.map(img => ImageCard(img, true)).join('');
   
   const html = buildPageTemplate({
-    title: `All Images - Page ${page} | ImageAI Go`,
-    description: `Browse all AI-analyzed images. Page ${page}.`,
-    heading: `All Images Gallery`,
-    subtitle: `Page ${page} - ${images.length} images`,
+    title: `Random Images Gallery | ImageAI Go`,
+    description: `Browse random AI-analyzed images. Discover ${images.length} images.`,
+    heading: `Random Images Gallery`,
+    subtitle: `Showing ${images.length} random images - refresh to see more`,
     content: imageCards,
-    canonical: `https://imageaigo.cc/images${page > 1 ? '?page=' + page : ''}`
+    canonical: `https://imageaigo.cc/images`
   });
   
   return new Response(html, {
@@ -1033,8 +1156,11 @@ async function handleImageDetailPage(request, env, imageSlug) {
   }
   
   const image = await env.DB.prepare(
-    `SELECT i.*, (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
-     FROM images i WHERE i.slug = ?`
+    `SELECT i.*, (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
+     u.username, u.display_name, u.avatar_url
+     FROM images i
+     LEFT JOIN users u ON i.user_id = u.id
+     WHERE i.slug = ?`
   ).bind(imageSlug).first();
   
   if (!image) {
@@ -1067,6 +1193,22 @@ async function handleImageDetailPage(request, env, imageSlug) {
     ? image.image_url 
     : `https://imageaigo.cc${image.image_url}`;
   
+  // 构建用户信息
+  const authorInfo = image.user_id && (image.username || image.display_name) ? {
+    "@type": "Person",
+    "name": image.display_name || image.username,
+    "identifier": image.username,
+    "url": `https://imageaigo.cc/user/${encodeURIComponent(image.username)}`
+  } : {
+    "@type": "Organization",
+    "name": "ImageAI Go",
+    "url": "https://imageaigo.cc"
+  };
+  
+  const creditText = image.user_id && (image.username || image.display_name)
+    ? `Photo by ${image.display_name || image.username} on ImageAI Go`
+    : "ImageAI Go - AI-Powered Image Analysis Platform";
+  
   const imageSchema = {
     "@context": "https://schema.org",
     "@type": "ImageObject",
@@ -1077,16 +1219,9 @@ async function handleImageDetailPage(request, env, imageSlug) {
     "thumbnailUrl": fullImageUrl,
     "datePublished": new Date(image.created_at).toISOString(),
     "uploadDate": new Date(image.created_at).toISOString(),
-    "author": {
-      "@type": "Organization",
-      "name": "ImageAI Go",
-      "url": "https://imageaigo.cc"
-    },
-    "creator": {
-      "@type": "Organization",
-      "name": "ImageAI Go"
-    },
-    "creditText": "ImageAI Go - AI-Powered Image Analysis Platform",
+    "author": authorInfo,
+    "creator": authorInfo,
+    "creditText": creditText,
     "copyrightNotice": "© 2024 ImageAI Go. All rights reserved.",
     "license": "https://imageaigo.cc/terms",
     "acquireLicensePage": "https://imageaigo.cc/terms",
@@ -1384,6 +1519,22 @@ async function handleImageDetailPage(request, env, imageSlug) {
       </div>
       
       <div class="info-section">
+        ${image.username ? `
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e8e8e8;">
+          <img src="${image.avatar_url || 'https://randomuser.me/api/portraits/men/1.jpg'}" 
+               alt="${escapeHtml(image.display_name || image.username)}"
+               style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover; border: 2px solid #f0f0f0;">
+          <div>
+            <div style="font-weight: 600; font-size: 1rem; color: #333;">
+              <a href="/user/${encodeURIComponent(image.username)}" style="color: #667eea; text-decoration: none;">
+                ${escapeHtml(image.display_name || image.username)}
+              </a>
+            </div>
+            <div style="font-size: 0.85rem; color: #999;">@${escapeHtml(image.username)}</div>
+          </div>
+        </div>
+        ` : ''}
+        
         <div class="description">${escapeHtml(image.description || '')}</div>
         
         <div class="meta">
@@ -1592,8 +1743,10 @@ async function handleSearchAPI(request, env) {
   
   const { results } = await env.DB.prepare(`
     SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
+      i.user_id, u.username, u.display_name, u.avatar_url
     FROM images i
+    LEFT JOIN users u ON i.user_id = u.id
     LEFT JOIN image_tags it ON i.id = it.image_id
     LEFT JOIN tags t ON it.tag_id = t.id
     WHERE i.description LIKE ? OR t.name LIKE ?
@@ -1629,8 +1782,10 @@ async function handleCategoryImagesAPI(request, env, category) {
   
   const { results } = await env.DB.prepare(`
     SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
+      i.user_id, u.username, u.display_name, u.avatar_url
     FROM images i
+    LEFT JOIN users u ON i.user_id = u.id
     JOIN image_tags it ON i.id = it.image_id
     JOIN tags t ON it.tag_id = t.id
     WHERE t.name = ? AND t.level = 1
@@ -1666,8 +1821,10 @@ async function handleTagImagesAPI(request, env, tagName) {
   
   const { results } = await env.DB.prepare(`
     SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
+      i.user_id, u.username, u.display_name, u.avatar_url
     FROM images i
+    LEFT JOIN users u ON i.user_id = u.id
     JOIN image_tags it ON i.id = it.image_id
     JOIN tags t ON it.tag_id = t.id
     WHERE t.name = ?
@@ -1718,7 +1875,7 @@ async function handleSearchPage(request, env) {
 }
 
 // Database functions
-async function storeImageAnalysis(db, imageUrl, imageHash, analysis) {
+async function storeImageAnalysis(db, imageUrl, imageHash, analysis, userId = null) {
   const existing = await db.prepare('SELECT id, slug FROM images WHERE image_hash = ?').bind(imageHash).first();
 
   let imageId, slug;
@@ -1734,8 +1891,8 @@ async function storeImageAnalysis(db, imageUrl, imageHash, analysis) {
     // 生成唯一slug
     slug = generateSlug(analysis.description, imageHash);
     const result = await db.prepare(
-      'INSERT INTO images (image_url, image_hash, slug, description, width, height, analyzed_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
-    ).bind(imageUrl, imageHash, slug, analysis.description, width, height).run();
+      'INSERT INTO images (image_url, image_hash, slug, description, width, height, user_id, analyzed_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+    ).bind(imageUrl, imageHash, slug, analysis.description, width, height, userId).run();
     imageId = result.meta.last_row_id;
   }
 
@@ -2081,7 +2238,7 @@ async function generateAdminToken(env) {
   return token;
 }
 
-async function verifyAdminToken(request, env) {
+export async function verifyAdminToken(request, env) {
   const authHeader = request.headers.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return false;
@@ -2114,7 +2271,7 @@ async function verifyAdminToken(request, env) {
   }
 }
 
-async function simpleSign(data, secret) {
+export async function simpleSign(data, secret) {
   const encoder = new TextEncoder();
   const keyData = encoder.encode(secret);
   const dataBuffer = encoder.encode(data);
@@ -2130,6 +2287,370 @@ async function simpleSign(data, secret) {
   const signature = await crypto.subtle.sign('HMAC', key, dataBuffer);
   return btoa(String.fromCharCode(...new Uint8Array(signature)));
 }
+
+// ============= 用户认证 API 处理函数 =============
+
+// 用户注册
+async function handleUserRegister(request, env) {
+  try {
+    const { email, password, username } = await request.json();
+    const result = await registerUser(email, password, username, env);
+    
+    return new Response(JSON.stringify(result), {
+      status: result.success ? 200 : 400,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  } catch (error) {
+    console.error('[API] Register error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '注册失败，请稍后重试' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// 用户登录
+async function handleUserLogin(request, env) {
+  try {
+    const { email, password } = await request.json();
+    const result = await loginUser(email, password, env);
+    
+    if (result.success) {
+      // 设置 session cookie
+      return createResponseWithSession(
+        JSON.stringify(result),
+        result.sessionToken,
+        { status: 200 }
+      );
+    } else {
+      return new Response(JSON.stringify(result), {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          ...handleCORS().headers
+        }
+      });
+    }
+  } catch (error) {
+    console.error('[API] Login error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '登录失败，请稍后重试' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// 用户登出
+async function handleUserLogout(request, env) {
+  try {
+    const auth = await optionalAuth(request, env);
+    
+    if (auth.authorized && auth.sessionToken) {
+      await logoutUser(auth.sessionToken, env);
+    }
+    
+    // 清除 session cookie
+    return createResponseWithoutSession(
+      JSON.stringify({ success: true, message: '登出成功' }),
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('[API] Logout error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '登出失败' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// 获取当前用户信息
+async function handleUserMe(request, env) {
+  try {
+    const auth = await requireAuth(request, env);
+    
+    if (!auth.authorized) {
+      return auth.response;
+    }
+    
+    const result = await getUserInfo(auth.user.id, env);
+    
+    return new Response(JSON.stringify(result), {
+      status: result.success ? 200 : 404,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  } catch (error) {
+    console.error('[API] Get user info error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '获取用户信息失败' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// 忘记密码
+async function handleUserForgotPassword(request, env) {
+  try {
+    const { email } = await request.json();
+    const result = await requestPasswordReset(email, env);
+    
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  } catch (error) {
+    console.error('[API] Forgot password error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '请求失败，请稍后重试' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// 重置密码
+async function handleUserResetPassword(request, env) {
+  try {
+    const { resetToken, newPassword } = await request.json();
+    const result = await resetPassword(resetToken, newPassword, env);
+    
+    return new Response(JSON.stringify(result), {
+      status: result.success ? 200 : 400,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  } catch (error) {
+    console.error('[API] Reset password error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '重置失败，请稍后重试' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// 修改密码
+async function handleUserChangePassword(request, env) {
+  try {
+    const auth = await requireAuth(request, env);
+    
+    if (!auth.authorized) {
+      return auth.response;
+    }
+    
+    const { oldPassword, newPassword } = await request.json();
+    const result = await changePassword(auth.user.id, oldPassword, newPassword, env);
+    
+    return new Response(JSON.stringify(result), {
+      status: result.success ? 200 : 400,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  } catch (error) {
+    console.error('[API] Change password error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '修改密码失败' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// ============= 个人中心处理函数 =============
+
+// 用户公开页面
+async function handleUserPage(request, env, username) {
+  try {
+    // 获取用户信息（通过username）
+    const user = await env.DB.prepare(`
+      SELECT id, username, display_name, avatar_url, bio, created_at
+      FROM users
+      WHERE username = ?
+    `).bind(username).first();
+    
+    if (!user) {
+      return new Response('User not found', { status: 404 });
+    }
+    
+    // 获取用户的图片
+    const userImages = await env.DB.prepare(`
+      SELECT id, slug, description, image_url, created_at
+      FROM images
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 100
+    `).bind(user.id).all();
+    
+    // 检查是否为本人访问
+    const { authorized, user: currentUser } = await optionalAuth(request, env);
+    const isOwnProfile = authorized && currentUser && currentUser.id === user.id;
+    
+    const html = buildProfilePage(user, userImages.results || [], isOwnProfile);
+    
+    return new Response(html, {
+      headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+    });
+    
+  } catch (error) {
+    console.error('[UserPage] Error:', error);
+    return new Response('Internal Server Error', { status: 500 });
+  }
+}
+
+// 个人中心页面
+async function handleProfilePage(request, env) {
+  try {
+    const auth = await requireAuth(request, env);
+    
+    if (!auth.authorized) {
+      // 未登录，跳转到登录页
+      return new Response('', {
+        status: 302,
+        headers: { 'Location': '/login?error=' + encodeURIComponent('请先登录') }
+      });
+    }
+    
+    // 获取用户信息
+    const user = await env.DB.prepare(`
+      SELECT id, username, display_name, email, avatar_url, bio, created_at, last_login
+      FROM users
+      WHERE id = ?
+    `).bind(auth.user.id).first();
+    
+    if (!user) {
+      return new Response('User not found', { status: 404 });
+    }
+    
+    // 获取用户的图片
+    const userImages = await env.DB.prepare(`
+      SELECT id, slug, description, image_url, created_at
+      FROM images
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 100
+    `).bind(auth.user.id).all();
+    
+    const html = buildProfilePage(user, userImages.results || [], true); // true = isOwnProfile
+    
+    return new Response(html, {
+      headers: { 'Content-Type': 'text/html;charset=UTF-8' }
+    });
+    
+  } catch (error) {
+    console.error('[Profile] Error:', error);
+    return new Response('Internal Server Error', { status: 500 });
+  }
+}
+
+// 更新个人资料
+async function handleProfileUpdate(request, env) {
+  try {
+    const auth = await requireAuth(request, env);
+    
+    if (!auth.authorized) {
+      return auth.response;
+    }
+    
+    const { display_name, avatar_url, bio } = await request.json();
+    
+    // 验证bio长度
+    if (bio && bio.length > 50) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: '个人介绍不能超过50个字' 
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...handleCORS().headers
+        }
+      });
+    }
+    
+    // 更新用户信息
+    await env.DB.prepare(`
+      UPDATE users 
+      SET display_name = ?, avatar_url = ?, bio = ?
+      WHERE id = ?
+    `).bind(display_name, avatar_url, bio, auth.user.id).run();
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: '资料更新成功'
+    }), {
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+    
+  } catch (error) {
+    console.error('[Profile] Update error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: '更新失败' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
+// ============= 管理员 API 处理函数 =============
 
 // 管理员登录
 async function handleAdminLogin(request, env) {
@@ -2230,8 +2751,10 @@ async function handleAdminImages(request, env) {
     
     let query = `
       SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-        (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count
+        (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
+        i.user_id, u.username, u.display_name, u.avatar_url
       FROM images i
+      LEFT JOIN users u ON i.user_id = u.id
     `;
     let params = [];
     let whereConditions = [];

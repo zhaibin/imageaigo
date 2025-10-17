@@ -256,27 +256,23 @@ button:disabled {
 }
 
 .like-button {
-    position: absolute;
-    top: -15px;
-    right: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     background: white;
     border: 2px solid #e74c3c;
-    border-radius: 50%;
-    width: 45px;
-    height: 45px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    border-radius: 20px;
+    padding: 4px 12px;
     cursor: pointer;
     transition: all 0.3s ease;
-    font-size: 1.3rem;
-    z-index: 10;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-size: 1rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    margin-left: 8px;
 }
 
 .like-button:hover {
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
 }
 
 .like-button.liked {
@@ -291,18 +287,51 @@ button:disabled {
     75% { transform: scale(1.1); }
 }
 
-.like-count {
+.image-user-info {
     position: absolute;
-    bottom: -8px;
-    right: -8px;
-    background: #667eea;
-    color: white;
-    font-size: 0.7rem;
-    padding: 2px 6px;
-    border-radius: 10px;
+    top: -15px;
+    right: 10px;
+    background: white;
+    border: 2px solid #667eea;
+    border-radius: 50%;
+    width: 45px;
+    height: 45px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 0;
+    overflow: hidden;
+}
+
+.image-user-info:hover {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.user-avatar-small {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    border: none;
+}
+
+.user-name-small {
+    display: none;
+}
+
+.like-count {
+    font-size: 0.85rem;
     font-weight: 600;
-    min-width: 20px;
-    text-align: center;
+    color: #333;
+}
+
+.like-button.liked .like-count {
+    color: white;
 }
 
 .image-description {
@@ -324,6 +353,7 @@ button:disabled {
     flex-wrap: wrap;
     gap: 5px;
     max-width: 100%;
+    align-items: center;
 }
 
 .tag {

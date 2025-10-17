@@ -127,13 +127,29 @@ export async function handleUnsplashSync(env) {
           });
           
           // 发送到队列
+          // 随机分配给随机用户（is_random=1）
+          // 查询所有随机用户的ID
+          const randomUsers = await env.DB.prepare(
+            'SELECT id FROM users WHERE is_random = 1 ORDER BY id'
+          ).all();
+          
+          if (!randomUsers.results || randomUsers.results.length === 0) {
+            console.warn('[UnsplashSync] No random users found, skipping');
+            return { status: 'error', message: 'No random users available' };
+          }
+          
+          // 随机选择一个用户
+          const randomUser = randomUsers.results[Math.floor(Math.random() * randomUsers.results.length)];
+          const randomUserId = randomUser.id;
+          
           await env.IMAGE_QUEUE.send({
             batchId: syncBatchId,
             fileIndex: index,
             fileName: `unsplash-${photo.id}.jpg`,
             imageHash: hash,
             contentType: 'image/jpeg',
-            sourceType: 'unsplash'
+            sourceType: 'unsplash',
+            userId: randomUserId
           });
           
           console.log(`[UnsplashSync:${index}] Queued: ${photo.id}`);
