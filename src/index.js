@@ -720,9 +720,36 @@ async function handleGetImages(request, env) {
 
     const { results } = await env.DB.prepare(query).bind(...params).all();
 
-    for (let image of results) {
-      const tags = await getImageTags(env.DB, image.id);
-      image.tags = tags;
+    // 优化：一次性查询所有图片的标签，避免N+1问题
+    if (results.length > 0) {
+      const imageIds = results.map(img => img.id);
+      const placeholders = imageIds.map(() => '?').join(',');
+      
+      const { results: allTags } = await env.DB.prepare(`
+        SELECT it.image_id, t.name, t.level, it.weight
+        FROM tags t 
+        JOIN image_tags it ON t.id = it.tag_id
+        WHERE it.image_id IN (${placeholders})
+        ORDER BY it.image_id, t.level, it.weight DESC
+      `).bind(...imageIds).all();
+      
+      // 将标签按图片ID分组
+      const tagsByImage = {};
+      for (const tag of allTags) {
+        if (!tagsByImage[tag.image_id]) {
+          tagsByImage[tag.image_id] = [];
+        }
+        tagsByImage[tag.image_id].push({
+          name: tag.name,
+          level: tag.level,
+          weight: tag.weight
+        });
+      }
+      
+      // 将标签附加到每张图片
+      for (let image of results) {
+        image.tags = tagsByImage[image.id] || [];
+      }
     }
 
     const responseData = JSON.stringify({ 
@@ -1757,16 +1784,36 @@ async function handleSearchAPI(request, env) {
   const hasMore = results.length > limit;
   const images = hasMore ? results.slice(0, limit) : results;
   
-  // 获取每张图片的标签
-  for (let img of images) {
-    const { results: tagResults } = await env.DB.prepare(`
-      SELECT t.name, t.level, it.weight
-      FROM tags t JOIN image_tags it ON t.id = it.tag_id
-      WHERE it.image_id = ?
-      ORDER BY t.level, it.weight DESC
-      LIMIT 5
-    `).bind(img.id).all();
-    img.tags = tagResults;
+  // 优化：一次性查询所有图片的标签，避免N+1问题
+  if (images.length > 0) {
+    const imageIds = images.map(img => img.id);
+    const placeholders = imageIds.map(() => '?').join(',');
+    
+    const { results: allTags } = await env.DB.prepare(`
+      SELECT it.image_id, t.name, t.level, it.weight
+      FROM tags t 
+      JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id IN (${placeholders})
+      ORDER BY it.image_id, t.level, it.weight DESC
+    `).bind(...imageIds).all();
+    
+    // 将标签按图片ID分组
+    const tagsByImage = {};
+    for (const tag of allTags) {
+      if (!tagsByImage[tag.image_id]) {
+        tagsByImage[tag.image_id] = [];
+      }
+      tagsByImage[tag.image_id].push({
+        name: tag.name,
+        level: tag.level,
+        weight: tag.weight
+      });
+    }
+    
+    // 将标签附加到每张图片（只取前5个）
+    for (let img of images) {
+      img.tags = (tagsByImage[img.id] || []).slice(0, 5);
+    }
   }
   
   return new Response(JSON.stringify({ images, query, hasMore }), {
@@ -1779,6 +1826,16 @@ async function handleCategoryImagesAPI(request, env, category) {
   const page = parseInt(url.searchParams.get('page') || '1');
   const limit = parseInt(url.searchParams.get('limit') || '20');
   const offset = (page - 1) * limit;
+  
+  // 尝试从KV缓存获取
+  const cacheKey = `category:${category}:page:${page}:limit:${limit}`;
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    console.log(`[Cache] Hit for category images: ${cacheKey}`);
+    return new Response(cached, {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
   
   const { results } = await env.DB.prepare(`
     SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
@@ -1796,19 +1853,45 @@ async function handleCategoryImagesAPI(request, env, category) {
   const hasMore = results.length > limit;
   const images = hasMore ? results.slice(0, limit) : results;
   
-  // 获取每张图片的标签
-  for (let img of images) {
-    const { results: tagResults } = await env.DB.prepare(`
-      SELECT t.name, t.level, it.weight
-      FROM tags t JOIN image_tags it ON t.id = it.tag_id
-      WHERE it.image_id = ?
-      ORDER BY t.level, it.weight DESC
-      LIMIT 5
-    `).bind(img.id).all();
-    img.tags = tagResults;
+  // 优化：一次性查询所有图片的标签，避免N+1问题
+  if (images.length > 0) {
+    const imageIds = images.map(img => img.id);
+    const placeholders = imageIds.map(() => '?').join(',');
+    
+    const { results: allTags } = await env.DB.prepare(`
+      SELECT it.image_id, t.name, t.level, it.weight
+      FROM tags t 
+      JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id IN (${placeholders})
+      ORDER BY it.image_id, t.level, it.weight DESC
+    `).bind(...imageIds).all();
+    
+    // 将标签按图片ID分组
+    const tagsByImage = {};
+    for (const tag of allTags) {
+      if (!tagsByImage[tag.image_id]) {
+        tagsByImage[tag.image_id] = [];
+      }
+      tagsByImage[tag.image_id].push({
+        name: tag.name,
+        level: tag.level,
+        weight: tag.weight
+      });
+    }
+    
+    // 将标签附加到每张图片（只取前5个）
+    for (let img of images) {
+      img.tags = (tagsByImage[img.id] || []).slice(0, 5);
+    }
   }
   
-  return new Response(JSON.stringify({ images, hasMore }), {
+  const responseData = JSON.stringify({ images, hasMore });
+  
+  // 缓存分类页面数据（10分钟）
+  env.CACHE.put(cacheKey, responseData, { expirationTtl: 600 })
+    .catch(err => console.warn('[Cache] Failed to cache category images:', err.message));
+  
+  return new Response(responseData, {
     headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
   });
 }
@@ -1818,6 +1901,16 @@ async function handleTagImagesAPI(request, env, tagName) {
   const page = parseInt(url.searchParams.get('page') || '1');
   const limit = parseInt(url.searchParams.get('limit') || '20');
   const offset = (page - 1) * limit;
+  
+  // 尝试从KV缓存获取
+  const cacheKey = `tag:${tagName}:page:${page}:limit:${limit}`;
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    console.log(`[Cache] Hit for tag images: ${cacheKey}`);
+    return new Response(cached, {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
   
   const { results } = await env.DB.prepare(`
     SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
@@ -1835,19 +1928,45 @@ async function handleTagImagesAPI(request, env, tagName) {
   const hasMore = results.length > limit;
   const images = hasMore ? results.slice(0, limit) : results;
   
-  // 获取每张图片的标签
-  for (let img of images) {
-    const { results: tagResults } = await env.DB.prepare(`
-      SELECT t.name, t.level, it.weight
-      FROM tags t JOIN image_tags it ON t.id = it.tag_id
-      WHERE it.image_id = ?
-      ORDER BY t.level, it.weight DESC
-      LIMIT 5
-    `).bind(img.id).all();
-    img.tags = tagResults;
+  // 优化：一次性查询所有图片的标签，避免N+1问题
+  if (images.length > 0) {
+    const imageIds = images.map(img => img.id);
+    const placeholders = imageIds.map(() => '?').join(',');
+    
+    const { results: allTags } = await env.DB.prepare(`
+      SELECT it.image_id, t.name, t.level, it.weight
+      FROM tags t 
+      JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id IN (${placeholders})
+      ORDER BY it.image_id, t.level, it.weight DESC
+    `).bind(...imageIds).all();
+    
+    // 将标签按图片ID分组
+    const tagsByImage = {};
+    for (const tag of allTags) {
+      if (!tagsByImage[tag.image_id]) {
+        tagsByImage[tag.image_id] = [];
+      }
+      tagsByImage[tag.image_id].push({
+        name: tag.name,
+        level: tag.level,
+        weight: tag.weight
+      });
+    }
+    
+    // 将标签附加到每张图片（只取前5个）
+    for (let img of images) {
+      img.tags = (tagsByImage[img.id] || []).slice(0, 5);
+    }
   }
   
-  return new Response(JSON.stringify({ images, hasMore }), {
+  const responseData = JSON.stringify({ images, hasMore });
+  
+  // 缓存标签页面数据（10分钟）
+  env.CACHE.put(cacheKey, responseData, { expirationTtl: 600 })
+    .catch(err => console.warn('[Cache] Failed to cache tag images:', err.message));
+  
+  return new Response(responseData, {
     headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
   });
 }

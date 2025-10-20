@@ -70,6 +70,10 @@ export function BaseLayout({
   <link rel="preconnect" href="https://imageaigo.cc">
   <link rel="dns-prefetch" href="https://imageaigo.cc">
   
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
+       crossorigin="anonymous"></script>
+  
   ${headExtra}
   
   <style>${styles}</style>

@@ -26,6 +26,7 @@ export function buildMainHTML() {
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#667eea">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ImageAI Go">
@@ -104,6 +105,10 @@ export function buildMainHTML() {
       "featureList": "AI image analysis, Automatic tagging, Smart recommendations, Image gallery"
     }
     </script>
+    
+    <!-- Google AdSense -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
+         crossorigin="anonymous"></script>
     
     <!-- Google Analytics 4 -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
@@ -618,7 +623,7 @@ function getClientScript() {
                 return;
             }
             
-            // 创建新卡片（先隐藏，等图片加载完再显示）
+            // 创建新卡片并等待图片加载
             const newCards = [];
             const imageLoadPromises = [];
             
@@ -626,7 +631,7 @@ function getClientScript() {
                 try {
                     const card = createImageCard(image, true);
                     card.classList.add('card-new');
-                    card.style.visibility = 'hidden'; // 完全隐藏，不占用布局空间
+                    card.style.visibility = 'hidden';
                     gallery.appendChild(card);
                     newCards.push(card);
                     
@@ -639,8 +644,8 @@ function getClientScript() {
                             } else {
                                 img.addEventListener('load', resolve);
                                 img.addEventListener('error', resolve);
-                                // 超时保护：最多等待3秒
-                                setTimeout(resolve, 3000);
+                                // 超时保护：最多等待2秒
+                                setTimeout(resolve, 2000);
                             }
                         });
                         imageLoadPromises.push(promise);
@@ -650,15 +655,15 @@ function getClientScript() {
                 }
             });
             
-            // 等待所有图片加载完成
+            // 等待所有图片加载完成（或超时）
             await Promise.all(imageLoadPromises);
             
-            console.log('[LoadImages] All images loaded, layouting...');
+            console.log('[LoadImages] Images loaded, layouting...');
             
             // 隐藏加载提示
             showLoadingIndicator(false);
             
-            // 所有图片加载完成后，使用实际高度布局
+            // 图片加载完成后，使用实际高度精确布局
             requestAnimationFrame(() => {
                 newCards.forEach((card, index) => {
                     // 显示卡片用于获取真实高度
@@ -676,15 +681,15 @@ function getClientScript() {
                     // 存储位置
                     cardPositions.set(card, { columnIndex, top });
                     
-                    // 使用实际高度更新列高度（确保间距精确）
+                    // 使用实际高度更新列高度
                     const actualHeight = card.offsetHeight;
                     columnHeights[columnIndex] = top + actualHeight + columnGap;
                     
-                    // 快速淡入
+                    // 渐进式显示
                     setTimeout(() => {
                         card.classList.add('card-visible');
                         card.classList.remove('card-new');
-                    }, index * 30);
+                    }, index * 20);
                 });
                 
                 updateGalleryHeight();
@@ -716,15 +721,24 @@ function getClientScript() {
 
         const img = document.createElement('img');
         
-        // 懒加载优化
+        // 懒加载优化和占位符
         if (lazyLoad) {
             img.loading = 'lazy';
             img.decoding = 'async';
-            // 添加占位符，防止布局抖动
-            img.style.backgroundColor = '#f0f0f0';
+            // 添加占位符样式
+            img.style.backgroundColor = '#f5f5f5';
+            img.style.minHeight = '200px';
+            // 添加占位符类
+            img.classList.add('img-loading');
         }
         
         img.src = image.image_url;
+        
+        // 图片加载完成后移除占位符
+        img.onload = () => {
+            img.classList.remove('img-loading');
+            img.classList.add('img-loaded');
+        };
         // 优化的 alt 标签 - 包含描述和关键标签
         const tags = image.tags ? 
           [...(image.tags.primary || []), ...(image.tags.subcategories || []), ...(image.tags.attributes || [])]
@@ -1042,6 +1056,10 @@ export function buildLegalPage(title, heading, content) {
   <title>${title}</title>
   <meta name="robots" content="index, follow">
   
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
+       crossorigin="anonymous"></script>
+  
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
   <script>
@@ -1127,6 +1145,10 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
   ${JSON.stringify(structuredData)}
   </script>
   ` : ''}
+  
+  <!-- Google AdSense -->
+  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
+       crossorigin="anonymous"></script>
   
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
@@ -1412,31 +1434,80 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
                 }
             });
             
-            await Promise.all(imageLoadPromises);
-            console.log('[LoadImages] All images loaded, layouting...');
+            // 隐藏加载提示
             showLoadingIndicator(false);
             
+            // 立即布局和显示卡片（使用占位符），不等待图片加载
             requestAnimationFrame(() => {
-                newCards.forEach((card, index) => {
-                    card.style.visibility = 'visible';
-                    
-                    const columnIndex = getShortestColumn();
-                    const left = columnIndex * (columnWidth + columnGap);
-                    const top = columnHeights[columnIndex];
-                    
-                    card.style.left = left + 'px';
-                    card.style.top = top + 'px';
-                    card.style.width = columnWidth + 'px';
-                    
-                    cardPositions.set(card, { columnIndex, top });
-                    
-                    const actualHeight = card.offsetHeight;
-                    columnHeights[columnIndex] = top + actualHeight + columnGap;
-                    
-                    setTimeout(() => {
-                        card.classList.add('card-visible');
-                        card.classList.remove('card-new');
-                    }, index * 30);
+                data.images.forEach((image, index) => {
+                    try {
+                        const card = createImageCard(image);
+                        card.classList.add('card-new');
+                        
+                        // 立即布局（使用预估高度）
+                        const columnIndex = getShortestColumn();
+                        const left = columnIndex * (columnWidth + columnGap);
+                        const top = columnHeights[columnIndex];
+                        
+                        card.style.left = left + 'px';
+                        card.style.top = top + 'px';
+                        card.style.width = columnWidth + 'px';
+                        
+                        // 添加到DOM
+                        gallery.appendChild(card);
+                        
+                        // 使用预估高度（根据宽高比）
+                        let estimatedHeight = 400;
+                        if (image.width && image.height) {
+                            const aspectRatio = image.height / image.width;
+                            estimatedHeight = columnWidth * aspectRatio + 150;
+                        }
+                        
+                        // 更新列高度
+                        columnHeights[columnIndex] = top + estimatedHeight + columnGap;
+                        cardPositions.set(card, { columnIndex, top });
+                        
+                        // 渐进式显示
+                        setTimeout(() => {
+                            card.classList.add('card-visible');
+                            card.classList.remove('card-new');
+                        }, index * 20);
+                        
+                        // 图片加载完成后重新调整布局
+                        const img = card.querySelector('img');
+                        if (img) {
+                            const handleImageLoad = () => {
+                                const actualHeight = card.offsetHeight;
+                                const heightDiff = actualHeight - estimatedHeight;
+                                
+                                if (Math.abs(heightDiff) > 5) {
+                                    columnHeights[columnIndex] = top + actualHeight + columnGap;
+                                    
+                                    // 调整同列后续卡片
+                                    const allCards = Array.from(gallery.querySelectorAll('.image-card'));
+                                    allCards.forEach(c => {
+                                        const pos = cardPositions.get(c);
+                                        if (pos && pos.columnIndex === columnIndex && pos.top > top) {
+                                            const newTop = parseFloat(c.style.top) + heightDiff;
+                                            c.style.top = newTop + 'px';
+                                            cardPositions.set(c, { ...pos, top: newTop });
+                                        }
+                                    });
+                                    
+                                    updateGalleryHeight();
+                                }
+                            };
+                            
+                            if (img.complete) {
+                                handleImageLoad();
+                            } else {
+                                img.addEventListener('load', handleImageLoad);
+                                img.addEventListener('error', handleImageLoad);
+                            }
+                        }
+                    } catch (err) {
+                        console.error(\`Failed to create card \${index}:\`, err);
+                    }
                 });
                 
                 updateGalleryHeight();
@@ -1477,6 +1548,16 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         img.title = image.description || 'Image';
         img.loading = 'lazy';
         img.decoding = 'async';
+        // 添加占位符
+        img.classList.add('img-loading');
+        img.style.backgroundColor = '#f5f5f5';
+        img.style.minHeight = '200px';
+        
+        // 图片加载完成
+        img.onload = () => {
+            img.classList.remove('img-loading');
+            img.classList.add('img-loaded');
+        };
         if (image.width && image.height) {
             img.style.aspectRatio = image.width + ' / ' + image.height;
         }
