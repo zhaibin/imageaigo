@@ -454,34 +454,30 @@ function getClientScript() {
     
     // 根据设备类型和容器实际宽度确定列数和列宽
     function getMasonryConfig() {
-        if (!gallery) return { columns: 4, columnWidth: 280, gap: 20, pageSize: 30 };
+        if (!gallery) return { columns: 4, columnWidth: 280, gap: 20 };
         
         const containerWidth = gallery.offsetWidth || gallery.clientWidth;
         const screenWidth = window.innerWidth;
         
-        let columns, minColumnWidth, gap, pageSize;
+        let columns, minColumnWidth, gap;
         
         // 根据屏幕宽度确定基础配置
         if (screenWidth < 768) {
             columns = 1;
             minColumnWidth = 280;
             gap = 15;
-            pageSize = 10;
         } else if (screenWidth < 1024) {
             columns = 3;
             minColumnWidth = 200;
             gap = 18;
-            pageSize = 20;
         } else if (screenWidth < 1400) {
             columns = 4;
             minColumnWidth = 250;
             gap = 20;
-            pageSize = 30;
         } else {
             columns = 5;
             minColumnWidth = 280;
             gap = 25;
-            pageSize = 30;
         }
         
         // 根据实际容器宽度计算列宽
@@ -495,14 +491,15 @@ function getClientScript() {
             const newTotalGapWidth = (columns - 1) * gap;
             const newAvailableWidth = containerWidth - newTotalGapWidth;
             const finalColumnWidth = Math.floor(newAvailableWidth / columns);
-            return { columns, columnWidth: finalColumnWidth, gap, pageSize };
+            return { columns, columnWidth: finalColumnWidth, gap };
         }
         
-        return { columns, columnWidth: calculatedColumnWidth, gap, pageSize };
+        return { columns, columnWidth: calculatedColumnWidth, gap };
     }
     
     function getPageSize() {
-        return getMasonryConfig().pageSize;
+        // 统一默认每页15张
+        return 15;
     }
     
     // 初始化瀑布流布局
@@ -600,6 +597,9 @@ function getClientScript() {
                 // 标签页面
                 const tagName = PAGE_PARAMS.tag || '';
                 url = \`/api/tag/\${encodeURIComponent(tagName)}/images?page=\${currentPage}&limit=\${pageSize}\`;
+            } else if (typeof PAGE_TYPE !== 'undefined' && PAGE_TYPE === 'images') {
+                // Gallery 页面
+                url = \`/api/images?page=\${currentPage}&limit=\${pageSize}\`;
             } else {
                 // 首页
                 url = \`/api/images?page=\${currentPage}&limit=\${pageSize}\`;
@@ -1416,7 +1416,8 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
     }
     
     function getPageSize() {
-        return getMasonryConfig().pageSize;
+        // 统一默认每页15张
+        return 15;
     }
     
     function initMasonry() {

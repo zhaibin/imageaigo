@@ -726,7 +726,7 @@ async function handleGetImages(request, env) {
   try {
     const url = new URL(request.url);
     const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '20')));
+    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit') || '15')));  // 默认15张
     const category = url.searchParams.get('category');
     const offset = (page - 1) * limit;
 
@@ -1174,66 +1174,21 @@ async function handleCleanup(request, env) {
 
 // Page Generators
 async function handleImagesPage(request, env) {
-  const url = new URL(request.url);
-  const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'));
-  
-  // 显示随机50张图片
-  const { results: images } = await env.DB.prepare(`
-    SELECT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
-      (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
-      i.user_id, u.username, u.display_name, u.avatar_url
-    FROM images i
-    LEFT JOIN users u ON i.user_id = u.id
-    ORDER BY RANDOM()
-    LIMIT 50
-  `).all();
-  
-  // 优化：批量查询所有图片的标签，避免 N+1 问题
-  if (images.length > 0) {
-    const imageIds = images.map(img => img.id);
-    const placeholders = imageIds.map(() => '?').join(',');
-    
-    const { results: allTags } = await env.DB.prepare(`
-      SELECT it.image_id, t.name, t.level, it.weight
-      FROM tags t 
-      JOIN image_tags it ON t.id = it.tag_id
-      WHERE it.image_id IN (${placeholders})
-      ORDER BY it.image_id, t.level, it.weight DESC
-    `).bind(...imageIds).all();
-    
-    // 将标签按图片ID分组
-    const tagsByImage = {};
-    for (const tag of allTags) {
-      if (!tagsByImage[tag.image_id]) {
-        tagsByImage[tag.image_id] = [];
-      }
-      tagsByImage[tag.image_id].push({
-        name: tag.name,
-        level: tag.level,
-        weight: tag.weight
-      });
-    }
-    
-    // 将标签附加到每张图片（只取前5个）
-    for (let img of images) {
-      img.tags = (tagsByImage[img.id] || []).slice(0, 5);
-    }
-  }
-  
-  // 直接使用 buildPageTemplate，不需要预渲染内容
+  // Gallery 页面：使用前端动态加载，不预加载图片
+  // 前端会调用 /api/images 进行分页加载
   const html = buildPageTemplate({
-    title: `Random Images Gallery | ImageAI Go`,
-    description: `Browse random AI-analyzed images. Discover ${images.length} images.`,
-    heading: `Random Images Gallery`,
-    subtitle: `Showing ${images.length} random images - refresh to see more`,
-    content: '',  // 空内容，让前端 JS 动态加载
+    title: `Images Gallery | ImageAI Go`,
+    description: `Browse AI-analyzed images with intelligent tagging.`,
+    heading: `Images Gallery`,
+    subtitle: `Explore our image collection`,
+    content: '',  // 空内容，前端 JS 动态加载
     canonical: `https://imageaigo.cc/images`,
-    pageType: 'gallery',
-    pageParams: { preloadedImages: images }  // 传递预加载的图片数据
+    pageType: 'images',
+    pageParams: {}
   });
   
   return new Response(html, {
-    headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'public, max-age=180' }
+    headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'public, max-age=300' }
   });
 }
 
@@ -1823,7 +1778,7 @@ async function handleSearchAPI(request, env) {
   const url = new URL(request.url);
   const query = url.searchParams.get('q') || '';
   const page = parseInt(url.searchParams.get('page') || '1');
-  const limit = parseInt(url.searchParams.get('limit') || '20');
+  const limit = parseInt(url.searchParams.get('limit') || '15');  // 默认15张
   const offset = (page - 1) * limit;
   
   if (!query || query.length < 2) {
@@ -1888,7 +1843,7 @@ async function handleSearchAPI(request, env) {
 async function handleCategoryImagesAPI(request, env, category) {
   const url = new URL(request.url);
   const page = parseInt(url.searchParams.get('page') || '1');
-  const limit = parseInt(url.searchParams.get('limit') || '20');
+  const limit = parseInt(url.searchParams.get('limit') || '15');  // 默认15张
   const offset = (page - 1) * limit;
   
   // 尝试从KV缓存获取
@@ -1963,7 +1918,7 @@ async function handleCategoryImagesAPI(request, env, category) {
 async function handleTagImagesAPI(request, env, tagName) {
   const url = new URL(request.url);
   const page = parseInt(url.searchParams.get('page') || '1');
-  const limit = parseInt(url.searchParams.get('limit') || '20');
+  const limit = parseInt(url.searchParams.get('limit') || '15');  // 默认15张
   const offset = (page - 1) * limit;
   
   // 尝试从KV缓存获取
