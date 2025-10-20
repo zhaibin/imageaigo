@@ -787,11 +787,8 @@ function getClientScript() {
             img.classList.add('img-error');
         };
         // 优化的 alt 标签 - 包含描述和关键标签
-        const tags = image.tags ? 
-          [...(image.tags.primary || []), ...(image.tags.subcategories || []), ...(image.tags.attributes || [])]
-            .slice(0, 3)
-            .map(t => t.name)
-            .join(', ') : '';
+        const tags = (Array.isArray(image.tags) && image.tags.length > 0) ? 
+          image.tags.slice(0, 3).map(t => t.name).join(', ') : '';
         img.alt = (image.description || 'Image') + (tags ? ' - ' + tags : '');
         
         // Set aspect ratio to prevent layout shift
