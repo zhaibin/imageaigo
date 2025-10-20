@@ -14,10 +14,6 @@ export function buildLoginPage(message = '', error = '') {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login - ImageAI Go</title>
   
-  <!-- Google AdSense -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
-       crossorigin="anonymous"></script>
-  
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
   <script>
@@ -269,10 +265,6 @@ export function buildRegisterPage(message = '', error = '') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign Up - ImageAI Go</title>
-  
-  <!-- Google AdSense -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
-       crossorigin="anonymous"></script>
   
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
@@ -549,10 +541,6 @@ export function buildForgotPasswordPage(message = '', error = '') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Forgot Password - ImageAI Go</title>
-  
-  <!-- Google AdSense -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
-       crossorigin="anonymous"></script>
   
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
@@ -839,10 +827,6 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reset Password - ImageAI Go</title>
-  
-  <!-- Google AdSense -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
-       crossorigin="anonymous"></script>
   
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>

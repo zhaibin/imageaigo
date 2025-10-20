@@ -1176,10 +1176,6 @@ export function buildLegalPage(title, heading, content) {
   <title>${title}</title>
   <meta name="robots" content="index, follow">
   
-  <!-- Google AdSense -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3399857146031237"
-       crossorigin="anonymous"></script>
-  
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
   <script>
