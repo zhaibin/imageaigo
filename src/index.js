@@ -478,9 +478,25 @@ async function handleR2Image(request, env, path) {
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
-    headers.set('Cache-Control', 'public, max-age=31536000');
+    
+    // 优化的缓存策略
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    headers.set('CDN-Cache-Control', 'public, max-age=31536000');
+    
+    // 性能优化头
     headers.set('X-Content-Source', 'R2');
     headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Timing-Allow-Origin', '*');
+    
+    // 支持范围请求（视频、大图片）
+    headers.set('Accept-Ranges', 'bytes');
+    
+    // 图片优化提示
+    if (object.httpMetadata?.contentType?.startsWith('image/')) {
+      headers.set('X-Content-Type-Options', 'nosniff');
+      // 提示浏览器可以使用客户端提示
+      headers.set('Accept-CH', 'Viewport-Width, Width, DPR');
+    }
     
     if (object.customMetadata?.hash) {
       headers.set('X-Image-Hash', object.customMetadata.hash);
