@@ -2,9 +2,9 @@
 
 ## [v2.4.4] - 2025-10-20
 
-### 📢 Google AdSense 完整覆盖
+### 📢 Google AdSense 精准部署
 
-#### 新增 AdSense 页面 ⭐
+#### AdSense 部署策略 ⭐
 - **图片详情页**（`/image/:slug`）
   - 添加 AdSense 自动广告
   - 添加 Google Analytics 4
