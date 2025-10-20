@@ -1,5 +1,69 @@
 # 更新日志
 
+## [v2.4.3] - 2025-10-20
+
+### 🐛 Service Worker 修复
+
+#### 修复 Cache API 错误 ⭐
+- **问题**：`Cache.put()` 不支持缓存 POST 请求
+  - 错误：`Request method 'POST' is unsupported`
+  - 原因：Cache API 只支持 GET 请求
+  
+- **解决方案**：
+  - 在所有缓存策略函数中添加 GET 请求检查
+  - POST/PUT/DELETE 请求直接透传，不缓存
+  - 只缓存成功的 GET 响应（status === 200）
+  
+- **修复位置**：
+  - `fetch` 事件监听器：顶层 GET 检查
+  - `cacheFirstStrategy`：GET 请求验证
+  - `networkFirstStrategy`：GET 请求验证
+  - `networkFirstWithOffline`：GET 请求验证
+
+#### 代码改进
+```javascript
+// Fetch 事件 - 顶层过滤
+self.addEventListener('fetch', (event) => {
+  // 只缓存 GET 请求
+  if (request.method !== 'GET') {
+    return;  // POST/PUT/DELETE 直接跳过
+  }
+  // ...
+});
+
+// 各策略函数 - 双重检查
+async function cacheFirstStrategy(request, cacheName) {
+  if (request.method !== 'GET') {
+    return fetch(request);  // 安全降级
+  }
+  // ...
+}
+```
+
+#### 优化细节
+- ✅ 只缓存状态码 200 的响应
+- ✅ 改进错误日志（显示具体错误信息）
+- ✅ 所有策略函数统一处理逻辑
+- ✅ 防御式编程，避免异常
+
+### 📝 文件修改
+
+- `public/sw.js` - 添加 GET 请求检查、优化错误处理
+
+### 🎯 影响范围
+
+**修复前：**
+- ❌ POST 请求触发缓存错误
+- ❌ 控制台大量错误日志
+- ❌ 影响用户体验
+
+**修复后：**
+- ✅ POST 请求正常处理
+- ✅ 无错误日志
+- ✅ Service Worker 稳定运行
+
+---
+
 ## [v2.4.2] - 2025-10-20
 
 ### 🌐 CDN 与图片缓存优化

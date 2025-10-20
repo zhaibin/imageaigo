@@ -70,6 +70,11 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // 只缓存 GET 请求
+  if (request.method !== 'GET') {
+    return;
+  }
+
   // 只处理同源请求和图片请求
   if (url.origin !== location.origin && !request.url.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
     return;
@@ -103,6 +108,11 @@ self.addEventListener('fetch', (event) => {
  */
 async function cacheFirstStrategy(request, cacheName) {
   try {
+    // 只缓存 GET 请求
+    if (request.method !== 'GET') {
+      return fetch(request);
+    }
+
     // 1. 尝试从缓存获取
     const cachedResponse = await caches.match(request);
     if (cachedResponse) {
@@ -114,12 +124,12 @@ async function cacheFirstStrategy(request, cacheName) {
     console.log('[SW] Cache miss, fetching:', request.url);
     const networkResponse = await fetch(request);
 
-    // 3. 只缓存成功的响应
-    if (networkResponse.ok) {
+    // 3. 只缓存成功的 GET 响应
+    if (networkResponse.ok && networkResponse.status === 200) {
       const cache = await caches.open(cacheName);
       // 克隆响应，因为响应流只能使用一次
       cache.put(request, networkResponse.clone()).catch((err) => {
-        console.warn('[SW] Cache put failed:', err);
+        console.warn('[SW] Cache put failed:', err.message);
       });
     }
 
@@ -138,18 +148,23 @@ async function cacheFirstStrategy(request, cacheName) {
 
 /**
  * Network First 策略 - 优先使用网络
- * 适合：API 请求
+ * 适合：API 请求（仅 GET）
  */
 async function networkFirstStrategy(request, cacheName) {
   try {
+    // 只缓存 GET 请求
+    if (request.method !== 'GET') {
+      return fetch(request);
+    }
+
     // 1. 尝试从网络获取
     const networkResponse = await fetch(request);
     
-    // 2. 缓存成功的响应
-    if (networkResponse.ok) {
+    // 2. 只缓存成功的 GET 响应
+    if (networkResponse.ok && networkResponse.status === 200) {
       const cache = await caches.open(cacheName);
       cache.put(request, networkResponse.clone()).catch((err) => {
-        console.warn('[SW] Cache put failed:', err);
+        console.warn('[SW] Cache put failed:', err.message);
       });
     }
     
@@ -157,11 +172,13 @@ async function networkFirstStrategy(request, cacheName) {
   } catch (error) {
     console.log('[SW] Network failed, trying cache:', request.url);
     
-    // 3. 网络失败，回退到缓存
-    const cachedResponse = await caches.match(request);
-    if (cachedResponse) {
-      console.log('[SW] Serving from cache:', request.url);
-      return cachedResponse;
+    // 3. 网络失败，回退到缓存（仅 GET）
+    if (request.method === 'GET') {
+      const cachedResponse = await caches.match(request);
+      if (cachedResponse) {
+        console.log('[SW] Serving from cache:', request.url);
+        return cachedResponse;
+      }
     }
     
     throw error;
@@ -170,18 +187,23 @@ async function networkFirstStrategy(request, cacheName) {
 
 /**
  * Network First with Offline Fallback
- * 适合：HTML 页面
+ * 适合：HTML 页面（仅 GET）
  */
 async function networkFirstWithOffline(request) {
   try {
+    // 只处理 GET 请求
+    if (request.method !== 'GET') {
+      return fetch(request);
+    }
+
     // 1. 尝试从网络获取
     const networkResponse = await fetch(request);
     
     // 2. 缓存成功的响应
-    if (networkResponse.ok) {
+    if (networkResponse.ok && networkResponse.status === 200) {
       const cache = await caches.open(STATIC_CACHE);
       cache.put(request, networkResponse.clone()).catch((err) => {
-        console.warn('[SW] Cache put failed:', err);
+        console.warn('[SW] Cache put failed:', err.message);
       });
     }
     
