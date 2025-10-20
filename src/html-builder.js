@@ -834,10 +834,10 @@ function getClientScript() {
         const tagsContainer = document.createElement('div');
         tagsContainer.className = 'tags';
 
-        if (image.tags) {
+        if (image.tags && Array.isArray(image.tags) && image.tags.length > 0) {
             // 只显示1个category（level-1）和1个tag（level-2或level-3）
-            const categoryTag = (image.tags.primary || [])[0];
-            const otherTag = [...(image.tags.subcategories || []), ...(image.tags.attributes || [])][0];
+            const categoryTag = image.tags.find(t => t.level === 1);
+            const otherTag = image.tags.find(t => t.level > 1);
             
             [categoryTag, otherTag].filter(Boolean).forEach(tag => {
                 const tagEl = document.createElement('span');
