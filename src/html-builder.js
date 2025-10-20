@@ -721,23 +721,70 @@ function getClientScript() {
 
         const img = document.createElement('img');
         
-        // 懒加载优化和占位符
+        // 优化的懒加载策略
         if (lazyLoad) {
             img.loading = 'lazy';
             img.decoding = 'async';
-            // 添加占位符样式
-            img.style.backgroundColor = '#f5f5f5';
-            img.style.minHeight = '200px';
-            // 添加占位符类
+            
+            // 使用低质量占位符（LQIP）
             img.classList.add('img-loading');
+            img.style.backgroundColor = '#f5f5f5';
+            
+            // 计算占位符高度（基于宽高比）
+            if (image.width && image.height) {
+                const aspectRatio = (image.height / image.width) * 100;
+                img.style.aspectRatio = \`\${image.width} / \${image.height}\`;
+                // 使用 padding-bottom 技巧保持宽高比
+                const wrapper = document.createElement('div');
+                wrapper.style.position = 'relative';
+                wrapper.style.paddingBottom = aspectRatio + '%';
+                wrapper.style.overflow = 'hidden';
+                wrapper.style.backgroundColor = '#f5f5f5';
+            } else {
+                img.style.minHeight = '200px';
+            }
+            
+            // 使用 data-src 延迟加载
+            img.dataset.src = image.image_url;
+            img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
+            
+            // Intersection Observer 懒加载
+            if ('IntersectionObserver' in window) {
+                const observer = new IntersectionObserver((entries, obs) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            const lazyImg = entry.target;
+                            lazyImg.src = lazyImg.dataset.src;
+                            lazyImg.removeAttribute('data-src');
+                            obs.unobserve(lazyImg);
+                        }
+                    });
+                }, {
+                    rootMargin: '50px 0px', // 提前50px开始加载
+                    threshold: 0.01
+                });
+                observer.observe(img);
+            } else {
+                // 降级方案：直接加载
+                img.src = image.image_url;
+            }
+        } else {
+            img.src = image.image_url;
         }
         
-        img.src = image.image_url;
-        
-        // 图片加载完成后移除占位符
+        // 图片加载完成后的优化处理
         img.onload = () => {
             img.classList.remove('img-loading');
             img.classList.add('img-loaded');
+            // 触发渐进式显示动画
+            requestAnimationFrame(() => {
+                img.style.opacity = '1';
+            });
+        };
+        
+        img.onerror = () => {
+            img.classList.remove('img-loading');
+            img.classList.add('img-error');
         };
         // 优化的 alt 标签 - 包含描述和关键标签
         const tags = image.tags ? 
@@ -1044,7 +1091,80 @@ function getClientScript() {
     }
     
     console.log('[Init] Setup complete, infinite scroll enabled');
-</script>`;
+    
+    // Service Worker 注册
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then((registration) => {
+                    console.log('[SW] Registered successfully:', registration.scope);
+                    
+                    // 检查更新
+                    registration.addEventListener('updatefound', () => {
+                        const newWorker = registration.installing;
+                        console.log('[SW] Update found');
+                        
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // 新版本已安装，提示用户刷新
+                                showUpdateNotification();
+                            }
+                        });
+                    });
+                })
+                .catch((error) => {
+                    console.log('[SW] Registration failed:', error);
+                });
+            
+            // 监听网络状态
+            window.addEventListener('online', () => {
+                console.log('[Network] Back online');
+                showSuccessMessage('✅ 网络已恢复');
+            });
+            
+            window.addEventListener('offline', () => {
+                console.log('[Network] Offline');
+                showSuccessMessage('📡 当前离线，将使用缓存内容', true);
+            });
+        });
+    }
+    
+    function showUpdateNotification() {
+        const notification = document.createElement('div');
+        notification.style.cssText = 'position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #667eea; color: white; padding: 15px 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 10000; display: flex; align-items: center; gap: 15px; animation: slideUp 0.3s ease-out;';
+        
+        const message = document.createElement('span');
+        message.style.flex = '1';
+        message.textContent = '🎉 新版本可用！';
+        
+        const reloadBtn = document.createElement('button');
+        reloadBtn.textContent = '刷新';
+        reloadBtn.style.cssText = 'background: white; color: #667eea; border: none; padding: 8px 20px; border-radius: 5px; font-weight: 600; cursor: pointer;';
+        reloadBtn.onclick = () => location.reload();
+        
+        const laterBtn = document.createElement('button');
+        laterBtn.textContent = '稍后';
+        laterBtn.style.cssText = 'background: transparent; color: white; border: 1px solid white; padding: 8px 15px; border-radius: 5px; cursor: pointer;';
+        laterBtn.onclick = () => notification.remove();
+        
+        notification.appendChild(message);
+        notification.appendChild(reloadBtn);
+        notification.appendChild(laterBtn);
+        document.body.appendChild(notification);
+    }
+</script>
+<style>
+    @keyframes slideUp {
+        from {
+            transform: translate(-50%, 100px);
+            opacity: 0;
+        }
+        to {
+            transform: translate(-50%, 0);
+            opacity: 1;
+        }
+    }
+</style>`;
 }
 
 export function buildLegalPage(title, heading, content) {

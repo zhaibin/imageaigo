@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>离线模式 - ImageAI Go</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      padding: 20px;
+    }
+    
+    .container {
+      text-align: center;
+      max-width: 600px;
+    }
+    
+    .icon {
+      font-size: 100px;
+      margin-bottom: 30px;
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+      }
+      50% { 
+        opacity: 0.7; 
+        transform: scale(0.95);
+      }
+    }
+    
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 20px;
+      font-weight: 700;
+    }
+    
+    p {
+      font-size: 1.2rem;
+      opacity: 0.95;
+      line-height: 1.8;
+      margin-bottom: 40px;
+    }
+    
+    .buttons {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    
+    button {
+      background: white;
+      color: #667eea;
+      border: none;
+      padding: 15px 35px;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+    
+    button:active {
+      transform: translateY(-1px);
+    }
+    
+    button.secondary {
+      background: transparent;
+      color: white;
+      border: 2px solid white;
+    }
+    
+    .features {
+      margin-top: 50px;
+      padding-top: 40px;
+      border-top: 1px solid rgba(255,255,255,0.3);
+    }
+    
+    .features h2 {
+      font-size: 1.3rem;
+      margin-bottom: 20px;
+      opacity: 0.9;
+    }
+    
+    .feature-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 20px;
+      text-align: left;
+    }
+    
+    .feature-item {
+      background: rgba(255,255,255,0.1);
+      padding: 15px;
+      border-radius: 10px;
+      backdrop-filter: blur(10px);
+    }
+    
+    .feature-item strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 1.1rem;
+    }
+    
+    .feature-item span {
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    
+    @media (max-width: 600px) {
+      h1 { font-size: 2rem; }
+      p { font-size: 1rem; }
+      .icon { font-size: 80px; }
+      .buttons { flex-direction: column; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">📡</div>
+    <h1>你当前处于离线模式</h1>
+    <p>
+      看起来你的网络连接暂时不可用。<br>
+      不用担心，ImageAI Go 支持离线浏览已缓存的内容。
+    </p>
+    
+    <div class="buttons">
+      <button onclick="location.reload()">🔄 重新加载</button>
+      <button class="secondary" onclick="goHome()">🏠 返回首页</button>
+    </div>
+    
+    <div class="features">
+      <h2>✨ 离线功能</h2>
+      <div class="feature-list">
+        <div class="feature-item">
+          <strong>📸 浏览图片</strong>
+          <span>查看已缓存的图片</span>
+        </div>
+        <div class="feature-item">
+          <strong>🏷️ 查看标签</strong>
+          <span>浏览分类和标签</span>
+        </div>
+        <div class="feature-item">
+          <strong>💾 自动缓存</strong>
+          <span>访问过的内容都已保存</span>
+        </div>
+        <div class="feature-item">
+          <strong>🔄 自动同步</strong>
+          <span>恢复连接后自动更新</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    function goHome() {
+      window.location.href = '/';
+    }
+    
+    // 监听网络状态变化
+    window.addEventListener('online', () => {
+      console.log('[Offline] Network restored');
+      showNotification('网络已恢复', '正在重新加载...');
+      setTimeout(() => location.reload(), 1000);
+    });
+    
+    window.addEventListener('offline', () => {
+      console.log('[Offline] Network lost');
+    });
+    
+    function showNotification(title, message) {
+      const notification = document.createElement('div');
+      notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #10b981;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        z-index: 9999;
+        animation: slideIn 0.3s ease-out;
+      `;
+      notification.innerHTML = `<strong>${title}</strong><br>${message}`;
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease-out';
+        setTimeout(() => notification.remove(), 300);
+      }, 3000);
+    }
+    
+    // 显示连接状态
+    if (!navigator.onLine) {
+      console.log('[Offline] Currently offline');
+    }
+  </script>
+  
+  <style>
+    @keyframes slideIn {
+      from {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+    
+    @keyframes slideOut {
+      from {
+        transform: translateX(0);
+        opacity: 1;
+      }
+      to {
+        transform: translateX(400px);
+        opacity: 0;
+      }
+    }
+  </style>
+</body>
+</html>
+

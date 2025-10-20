@@ -174,6 +174,33 @@ export default {
         });
       }
 
+      // Service Worker
+      if (path === '/sw.js') {
+        const swContent = await env.R2.get('public/sw.js');
+        if (swContent) {
+          return new Response(swContent.body, {
+            headers: {
+              'Content-Type': 'application/javascript; charset=utf-8',
+              'Cache-Control': 'public, max-age=0, must-revalidate',
+              'Service-Worker-Allowed': '/'
+            }
+          });
+        }
+      }
+
+      // Offline page
+      if (path === '/offline.html') {
+        const offlineContent = await env.R2.get('public/offline.html');
+        if (offlineContent) {
+          return new Response(offlineContent.body, {
+            headers: {
+              'Content-Type': 'text/html; charset=utf-8',
+              'Cache-Control': 'public, max-age=3600'
+            }
+          });
+        }
+      }
+
       // OG Image placeholder (返回 SVG)
       if (path === '/og-image.jpg') {
         return new Response(getOGImageSVG(), {

@@ -249,11 +249,13 @@ button:disabled {
     max-width: 100%;
 }
 
-/* 图片加载占位符 */
+/* 图片加载占位符 - 优化版本 */
 .image-card img.img-loading {
     background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
     background-size: 200% 100%;
     animation: loading-shimmer 1.5s infinite;
+    opacity: 0;
+    transition: opacity 0.3s ease-in;
 }
 
 @keyframes loading-shimmer {
@@ -262,12 +264,50 @@ button:disabled {
 }
 
 .image-card img.img-loaded {
-    animation: fadeIn 0.3s ease-in;
+    animation: fadeIn 0.4s ease-in forwards;
+}
+
+.image-card img.img-error {
+    background: #fee;
+    position: relative;
+}
+
+.image-card img.img-error::after {
+    content: '❌ 加载失败';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #999;
+    font-size: 14px;
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from { 
+        opacity: 0; 
+        transform: scale(0.95);
+    }
+    to { 
+        opacity: 1; 
+        transform: scale(1);
+    }
+}
+
+/* 渐进式图片加载效果 */
+.image-card img {
+    will-change: opacity, transform;
+    transition: opacity 0.3s ease-in, transform 0.3s ease-in;
+}
+
+/* 骨架屏优化 */
+.image-card img[data-src] {
+    filter: blur(10px);
+    transform: scale(1.05);
+}
+
+.image-card img[data-src].img-loaded {
+    filter: blur(0);
+    transform: scale(1);
 }
 
 .image-card-content {
