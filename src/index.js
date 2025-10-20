@@ -2930,17 +2930,38 @@ async function handleAdminImages(request, env) {
     const hasMore = results.length > limit;
     const images = results.slice(0, limit);
     
-    // 为每张图片获取标签信息
-    for (let img of images) {
-      const { results: tagResults } = await env.DB.prepare(`
-        SELECT t.name, t.level, it.weight
-        FROM tags t JOIN image_tags it ON t.id = it.tag_id
-        WHERE it.image_id = ?
-        ORDER BY t.level, it.weight DESC
-        LIMIT 5
-      `).bind(img.id).all();
-      img.tags = tagResults;
-      img.tag_count = tagResults.length;
+    // 优化：批量查询所有图片的标签，避免 N+1 问题
+    if (images.length > 0) {
+      const imageIds = images.map(img => img.id);
+      const placeholders = imageIds.map(() => '?').join(',');
+      
+      const { results: allTags } = await env.DB.prepare(`
+        SELECT it.image_id, t.name, t.level, it.weight
+        FROM tags t 
+        JOIN image_tags it ON t.id = it.tag_id
+        WHERE it.image_id IN (${placeholders})
+        ORDER BY it.image_id, t.level, it.weight DESC
+      `).bind(...imageIds).all();
+      
+      // 将标签按图片ID分组
+      const tagsByImage = {};
+      for (const tag of allTags) {
+        if (!tagsByImage[tag.image_id]) {
+          tagsByImage[tag.image_id] = [];
+        }
+        tagsByImage[tag.image_id].push({
+          name: tag.name,
+          level: tag.level,
+          weight: tag.weight
+        });
+      }
+      
+      // 将标签附加到每张图片（只取前5个）
+      for (let img of images) {
+        const imageTags = tagsByImage[img.id] || [];
+        img.tags = imageTags.slice(0, 5);
+        img.tag_count = imageTags.length;
+      }
     }
     
     return new Response(JSON.stringify({

@@ -75,6 +75,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // 跳过后台管理页面 - 不缓存任何后台路径
+  if (url.pathname.startsWith('/admin')) {
+    return;
+  }
+
   // 只处理同源请求和图片请求
   if (url.origin !== location.origin && !request.url.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
     return;
