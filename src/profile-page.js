@@ -2,6 +2,36 @@
  * User Profile Page
  */
 
+// 格式化加入日期
+function formatJoinDate(dateString) {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now - date);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  // 计算年月
+  const years = Math.floor(diffDays / 365);
+  const months = Math.floor((diffDays % 365) / 30);
+  
+  let number, text;
+  
+  if (years > 0) {
+    number = years;
+    text = years === 1 ? 'Year ago' : 'Years ago';
+  } else if (months > 0) {
+    number = months;
+    text = months === 1 ? 'Month ago' : 'Months ago';
+  } else if (diffDays > 0) {
+    number = diffDays;
+    text = diffDays === 1 ? 'Day ago' : 'Days ago';
+  } else {
+    number = 'Today';
+    text = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  }
+  
+  return { number, text };
+}
+
 export function buildProfilePage(user, userImages, isOwnProfile = false) {
   const imagesHtml = userImages.map(img => `
     <div class="image-card">
@@ -113,24 +143,80 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
     
     .user-stats {
       display: flex;
-      gap: 30px;
+      gap: 15px;
       margin-top: 20px;
     }
     
     .stat {
+      flex: 1;
+      background: linear-gradient(135deg, #f6f8ff 0%, #f0f4ff 100%);
+      border: 2px solid #e0e7ff;
+      border-radius: 12px;
+      padding: 20px;
       text-align: center;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .stat::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      transform: scaleX(0);
+      transition: transform 0.3s ease;
+    }
+    
+    .stat:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.2);
+      border-color: #c7d2fe;
+    }
+    
+    .stat:hover::before {
+      transform: scaleX(1);
+    }
+    
+    .stat-icon {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+      display: block;
+      filter: grayscale(0.3);
+      transition: all 0.3s ease;
+    }
+    
+    .stat:hover .stat-icon {
+      filter: grayscale(0);
+      transform: scale(1.1);
     }
     
     .stat-number {
-      font-size: 1.8rem;
-      font-weight: bold;
-      color: #667eea;
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+      line-height: 1;
     }
     
     .stat-label {
-      color: #666;
-      font-size: 0.9rem;
-      margin-top: 5px;
+      color: #6366f1;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .stat-sublabel {
+      color: #9ca3af;
+      font-size: 0.75rem;
+      margin-top: 4px;
     }
     
     .actions {
@@ -330,10 +416,27 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
       .profile-header {
         flex-direction: column;
         text-align: center;
+        padding: 30px 20px;
       }
       
       .user-stats {
         justify-content: center;
+        flex-direction: column;
+        width: 100%;
+        gap: 12px;
+      }
+      
+      .stat {
+        padding: 15px;
+      }
+      
+      .stat-icon {
+        font-size: 2rem;
+        margin-bottom: 8px;
+      }
+      
+      .stat-number {
+        font-size: 1.6rem;
       }
       
       .actions {
@@ -377,12 +480,16 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
         
         <div class="user-stats">
           <div class="stat">
+            <span class="stat-icon">📸</span>
             <div class="stat-number">${userImages.length}</div>
             <div class="stat-label">Images</div>
+            <div class="stat-sublabel">${userImages.length === 1 ? 'Upload' : 'Uploads'}</div>
           </div>
           <div class="stat">
-            <div class="stat-number">${new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short' })}</div>
+            <span class="stat-icon">📅</span>
+            <div class="stat-number">${formatJoinDate(user.created_at).number}</div>
             <div class="stat-label">Joined</div>
+            <div class="stat-sublabel">${formatJoinDate(user.created_at).text}</div>
           </div>
         </div>
       </div>
