@@ -143,20 +143,22 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
     
     .user-stats {
       display: flex;
-      gap: 15px;
-      margin-top: 20px;
+      gap: 12px;
+      margin-top: 15px;
     }
     
     .stat {
       flex: 1;
       background: linear-gradient(135deg, #f6f8ff 0%, #f0f4ff 100%);
-      border: 2px solid #e0e7ff;
-      border-radius: 12px;
-      padding: 20px;
+      border: 1.5px solid #e0e7ff;
+      border-radius: 10px;
+      padding: 12px 16px;
       text-align: center;
       transition: all 0.3s ease;
       position: relative;
       overflow: hidden;
+      min-width: 100px;
+      max-width: 140px;
     }
     
     .stat::before {
@@ -165,15 +167,15 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
       top: 0;
       left: 0;
       right: 0;
-      height: 3px;
+      height: 2px;
       background: linear-gradient(90deg, #667eea, #764ba2);
       transform: scaleX(0);
       transition: transform 0.3s ease;
     }
     
     .stat:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 5px 20px rgba(102, 126, 234, 0.2);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.15);
       border-color: #c7d2fe;
     }
     
@@ -182,8 +184,8 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
     }
     
     .stat-icon {
-      font-size: 2.5rem;
-      margin-bottom: 10px;
+      font-size: 1.5rem;
+      margin-bottom: 6px;
       display: block;
       filter: grayscale(0.3);
       transition: all 0.3s ease;
@@ -191,32 +193,32 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
     
     .stat:hover .stat-icon {
       filter: grayscale(0);
-      transform: scale(1.1);
+      transform: scale(1.08);
     }
     
     .stat-number {
-      font-size: 2rem;
+      font-size: 1.5rem;
       font-weight: 700;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      margin-bottom: 8px;
-      line-height: 1;
+      margin-bottom: 4px;
+      line-height: 1.2;
     }
     
     .stat-label {
       color: #6366f1;
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.3px;
     }
     
     .stat-sublabel {
       color: #9ca3af;
-      font-size: 0.75rem;
-      margin-top: 4px;
+      font-size: 0.68rem;
+      margin-top: 2px;
     }
     
     .actions {
@@ -421,22 +423,31 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
       
       .user-stats {
         justify-content: center;
-        flex-direction: column;
         width: 100%;
-        gap: 12px;
+        gap: 10px;
       }
       
       .stat {
-        padding: 15px;
+        padding: 10px 12px;
+        min-width: 90px;
+        max-width: 120px;
       }
       
       .stat-icon {
-        font-size: 2rem;
-        margin-bottom: 8px;
+        font-size: 1.3rem;
+        margin-bottom: 5px;
       }
       
       .stat-number {
-        font-size: 1.6rem;
+        font-size: 1.3rem;
+      }
+      
+      .stat-label {
+        font-size: 0.7rem;
+      }
+      
+      .stat-sublabel {
+        font-size: 0.65rem;
       }
       
       .actions {
