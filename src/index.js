@@ -1188,31 +1188,48 @@ async function handleImagesPage(request, env) {
     LIMIT 50
   `).all();
   
-  // 获取每张图片的标签
-  for (let img of images) {
-    const { results: tags } = await env.DB.prepare(`
-      SELECT t.name, t.level, it.weight
-      FROM tags t
+  // 优化：批量查询所有图片的标签，避免 N+1 问题
+  if (images.length > 0) {
+    const imageIds = images.map(img => img.id);
+    const placeholders = imageIds.map(() => '?').join(',');
+    
+    const { results: allTags } = await env.DB.prepare(`
+      SELECT it.image_id, t.name, t.level, it.weight
+      FROM tags t 
       JOIN image_tags it ON t.id = it.tag_id
-      WHERE it.image_id = ?
-      ORDER BY t.level, it.weight DESC
-      LIMIT 5
-    `).bind(img.id).all();
-    img.tags = tags;
+      WHERE it.image_id IN (${placeholders})
+      ORDER BY it.image_id, t.level, it.weight DESC
+    `).bind(...imageIds).all();
+    
+    // 将标签按图片ID分组
+    const tagsByImage = {};
+    for (const tag of allTags) {
+      if (!tagsByImage[tag.image_id]) {
+        tagsByImage[tag.image_id] = [];
+      }
+      tagsByImage[tag.image_id].push({
+        name: tag.name,
+        level: tag.level,
+        weight: tag.weight
+      });
+    }
+    
+    // 将标签附加到每张图片（只取前5个）
+    for (let img of images) {
+      img.tags = (tagsByImage[img.id] || []).slice(0, 5);
+    }
   }
   
-  // 使用 ImageCard 组件渲染图片
-  const { ImageCard } = await import('./components/index.js');
-  
-  const imageCards = images.map(img => ImageCard(img, true)).join('');
-  
+  // 直接使用 buildPageTemplate，不需要预渲染内容
   const html = buildPageTemplate({
     title: `Random Images Gallery | ImageAI Go`,
     description: `Browse random AI-analyzed images. Discover ${images.length} images.`,
     heading: `Random Images Gallery`,
     subtitle: `Showing ${images.length} random images - refresh to see more`,
-    content: imageCards,
-    canonical: `https://imageaigo.cc/images`
+    content: '',  // 空内容，让前端 JS 动态加载
+    canonical: `https://imageaigo.cc/images`,
+    pageType: 'gallery',
+    pageParams: { preloadedImages: images }  // 传递预加载的图片数据
   });
   
   return new Response(html, {
