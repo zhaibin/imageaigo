@@ -85,69 +85,164 @@ wrangler login
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/yourusername/imageaigo.git
+git clone https://github.com/zhaibin/imageaigo.git
 cd imageaigo
 
 # 2. 安装依赖
 npm install
 
-# 3. 创建资源
-wrangler d1 create imageaigo
-wrangler r2 bucket create imageaigo
-wrangler kv:namespace create "CACHE"
+# 3. 创建 Cloudflare 资源
+wrangler d1 create imageaigo                    # 创建 D1 数据库
+wrangler r2 bucket create imageaigo             # 创建 R2 存储桶
+wrangler kv:namespace create "CACHE"            # 创建 KV 命名空间
+wrangler queues create image-processing-queue   # 创建消息队列
 
-# 4. 初始化数据库
+# 4. 更新 wrangler.toml 中的资源 ID
+# 复制上述命令输出的 ID 到 wrangler.toml 中对应的位置
+
+# 5. 初始化数据库
 wrangler d1 execute imageaigo --remote --file=schema.sql
 
-# 5. 设置环境变量
-wrangler secret put ADMIN_PASSWORD        # 管理员密码
-wrangler secret put ADMIN_SECRET          # 管理员会话密钥
-wrangler secret put RESEND_API_TOKEN      # Resend 邮件服务 API Token
-wrangler secret put TURNSTILE_SECRET_KEY  # Cloudflare Turnstile 密钥
+# 6. 配置环境变量（使用管理脚本，推荐）
+./admin-setup.sh                                # 交互式配置管理员账号
+./turnstile.sh                                  # 交互式配置 Turnstile
 
-# 6. 部署
+# 或手动配置环境变量
+wrangler secret put ADMIN_PASSWORD              # 管理员密码
+wrangler secret put ADMIN_SECRET                # 管理员会话密钥（32字符随机字符串）
+wrangler secret put RESEND_API_TOKEN            # Resend 邮件服务 API Token
+wrangler secret put TURNSTILE_SECRET_KEY        # Cloudflare Turnstile Secret Key
+
+# 7. 部署到生产环境
 npm run deploy
+# 或
+wrangler deploy
+
+# 8. 验证部署
+wrangler tail                                   # 查看实时日志
 ```
 
 ### 配置说明
 
 #### 1. 更新资源 ID
 
-更新 `wrangler.toml` 中的资源 ID：
+创建资源后，更新 `wrangler.toml` 中的资源 ID：
 
 ```toml
 [[d1_databases]]
 binding = "DB"
 database_name = "imageaigo"
-database_id = "YOUR_D1_DATABASE_ID"  # 替换为实际 ID
+database_id = "YOUR_D1_DATABASE_ID"              # 替换为实际 ID
 
 [[kv_namespaces]]
 binding = "CACHE"
-id = "YOUR_KV_NAMESPACE_ID"  # 替换为实际 ID
+id = "YOUR_KV_NAMESPACE_ID"                      # 替换为实际 ID
 
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "imageaigo"
+
+[[queues.producers]]
+queue = "image-processing-queue"
+binding = "IMAGE_QUEUE"
+
+[[queues.consumers]]
+queue = "image-processing-queue"
+max_batch_size = 1
+max_batch_timeout = 30
 ```
 
-#### 2. 配置 Turnstile（可选但推荐）
+#### 2. 配置管理员账号（必需）
 
-1. 访问 [Cloudflare Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile)
-2. 创建站点，获取 **Site Key** 和 **Secret Key**
-3. 更新 `src/user-pages.js` 中的站点密钥：
-   ```javascript
-   // 找到第 381 行，替换为你的 Site Key
-   sitekey: 'YOUR_SITE_KEY'
-   ```
-4. 配置密钥：`wrangler secret put TURNSTILE_SECRET_KEY`
-5. 验证配置：`./check-turnstile.sh`
+**方式1：使用管理脚本（推荐）**
+```bash
+./admin-setup.sh                                 # 交互式配置
+# 选择操作：
+# 1) 完整设置（首次使用）
+# 2) 仅修改密码
+# 3) 仅修改密钥
+# 4) 检查配置
+```
 
-#### 3. 配置邮件服务（必需）
+**方式2：手动配置**
+```bash
+wrangler secret put ADMIN_PASSWORD               # 设置管理员密码（至少8位）
+wrangler secret put ADMIN_SECRET                 # 设置会话密钥（32字符随机字符串）
+wrangler deploy                                  # 重新部署使配置生效
+```
 
-1. 注册 [Resend](https://resend.com) 账号
-2. 获取 API Token
-3. 配置域名验证（可选，用于发送域名邮件）
-4. 配置密钥：`wrangler secret put RESEND_API_TOKEN`
+**生成安全的随机密钥**：
+```bash
+openssl rand -base64 32                          # 生成 32 字符随机字符串
+```
+
+#### 3. 配置 Cloudflare Turnstile（必需，用于防暴力破解）
+
+**方式1：使用管理脚本（推荐）**
+```bash
+./turnstile.sh                                   # 交互式配置
+# 选择操作：
+# 1) 检查配置
+# 2) 更新 Site Key
+# 3) 测试指南
+```
+
+**方式2：手动配置**
+```bash
+# 步骤1：创建 Turnstile 站点
+# 访问 https://dash.cloudflare.com/?to=/:account/turnstile
+# 创建站点，获取 Site Key 和 Secret Key
+
+# 步骤2：更新代码中的 Site Key
+# 编辑 src/pages/user/auth-pages.js
+# 搜索 'sitekey:' 并替换为你的 Site Key
+
+# 步骤3：配置 Secret Key
+wrangler secret put TURNSTILE_SECRET_KEY         # 输入你的 Secret Key
+
+# 步骤4：部署
+wrangler deploy
+```
+
+**当前配置的 Site Key**：`0x4AAAAAAACxIrRaibzD1pfM`
+
+#### 4. 配置邮件服务（必需，用于验证码）
+
+**步骤1：注册 Resend**
+- 访问 [Resend.com](https://resend.com)
+- 注册并验证账号
+
+**步骤2：获取 API Token**
+- 进入 API Keys 页面
+- 创建新的 API Key
+- 复制 Token（只显示一次）
+
+**步骤3：配置域名（可选）**
+- 添加并验证你的域名（如 `imageaigo.cc`）
+- 配置 DNS 记录（SPF、DKIM）
+- 验证通过后可使用自定义发件地址
+
+**步骤4：配置密钥**
+```bash
+wrangler secret put RESEND_API_TOKEN             # 粘贴你的 API Token
+wrangler deploy                                  # 重新部署
+```
+
+**默认发件地址**：`noreply@mail.imageaigo.cc`
+
+#### 5. 环境变量总览
+
+| 变量名 | 必需 | 说明 | 示例 |
+|--------|------|------|------|
+| `ADMIN_PASSWORD` | ✅ | 管理员密码 | `MySecurePass123` |
+| `ADMIN_SECRET` | ✅ | 会话密钥（32字符） | `随机生成的字符串` |
+| `RESEND_API_TOKEN` | ✅ | Resend API Token | `re_xxxxx` |
+| `TURNSTILE_SECRET_KEY` | ✅ | Turnstile Secret Key | `0x4xxxxxx` |
+
+**查看已配置的变量**：
+```bash
+wrangler secret list                             # 查看所有已配置的环境变量
+```
 
 ## 📖 使用指南
 
@@ -170,41 +265,167 @@ bucket_name = "imageaigo"
 
 ### API 接口
 
+#### 用户认证接口
+
+```bash
+# 发送邮箱验证码
+POST /api/send-code
+Body: { "email": "user@example.com", "type": "register|login|reset_password" }
+Response: { "success": true, "message": "Verification code sent" }
+
+# 用户注册
+POST /api/register
+Body: { 
+  "username": "johndoe", 
+  "email": "user@example.com", 
+  "password": "password123",
+  "verificationCode": "123456"
+}
+Response: { "success": true, "message": "Registration successful" }
+
+# 用户登录（密码）
+POST /api/login
+Body: { 
+  "emailOrUsername": "user@example.com", 
+  "password": "password123",
+  "turnstileToken": "xxx" 
+}
+Response: { "success": true, "message": "Login successful" }
+
+# 用户登录（验证码）
+POST /api/login-code
+Body: { 
+  "emailOrUsername": "user@example.com", 
+  "verificationCode": "123456",
+  "turnstileToken": "xxx"
+}
+Response: { "success": true, "message": "Login successful" }
+
+# 请求密码重置
+POST /api/request-reset
+Body: { "email": "user@example.com" }
+Response: { "success": true, "message": "Reset link sent to email" }
+
+# 重置密码
+POST /api/reset-password
+Body: { "token": "reset_token", "newPassword": "newpass123" }
+Response: { "success": true, "message": "Password reset successful" }
+
+# 修改密码（已登录）
+POST /api/change-password
+Body: { 
+  "email": "user@example.com", 
+  "newPassword": "newpass123",
+  "verificationCode": "123456"
+}
+Header: Cookie: session_token=xxx
+Response: { "success": true, "message": "Password changed" }
+
+# 用户登出
+POST /api/logout
+Header: Cookie: session_token=xxx
+Response: { "success": true }
+```
+
 #### 公开接口
 
 ```bash
-# 获取图片列表
-GET /api/images?limit=20&page=1
+# 获取图片列表（分页）
+GET /api/images?limit=15&page=1&category=nature
+Response: { 
+  "images": [...], 
+  "page": 1, 
+  "limit": 15, 
+  "hasMore": true 
+}
 
 # 搜索图片
-GET /api/search?q=关键词
+GET /api/search?q=sunset&limit=20
+Response: { "images": [...] }
 
-# 获取图片详情
-GET /api/image?id=123
+# 获取图片详情（JSON）
+GET /api/image-json/{slug}
+Response: { 
+  "image": {...}, 
+  "tags": [...], 
+  "recommendations": [...] 
+}
 
-# 获取分类列表
-GET /api/categories
+# 获取标签列表
+GET /api/tags
+Response: { "tags": [...] }
 
-# 点赞图片
-POST /api/like { imageId: 123 }
+# 点赞图片（需登录）
+POST /api/like
+Body: { "imageId": 123 }
+Header: Cookie: session_token=xxx
+Response: { "success": true, "likes": 5 }
 ```
 
-#### 管理接口（需要 Token）
+#### 管理接口（需要 Admin Token）
 
 ```bash
 # 管理员登录
 POST /api/admin/login
-Body: { "password": "your_password" }
+Body: { "password": "admin_password" }
+Response: { "success": true, "token": "admin_token" }
 
-# 获取统计
+# 获取统计数据
 GET /api/admin/stats
-Header: Authorization: Bearer <token>
+Header: Authorization: Bearer <admin_token>
+Response: { 
+  "images": 1234, 
+  "tags": 567, 
+  "users": 89,
+  "storage": "1.2 GB"
+}
 
-# 批量上传
+# 批量上传图片
 POST /api/admin/batch-upload
-Header: Authorization: Bearer <token>
+Header: Authorization: Bearer <admin_token>
 Content-Type: multipart/form-data
+Body: files[]
+Response: { 
+  "success": true, 
+  "queued": 5, 
+  "message": "5 images queued" 
+}
+
+# 获取图片详情
+GET /api/admin/image/{id}
+Header: Authorization: Bearer <admin_token>
+Response: { "image": {...}, "tags": [...] }
+
+# 删除图片
+DELETE /api/admin/image/{id}
+Header: Authorization: Bearer <admin_token>
+Response: { "success": true }
+
+# 重新分析图片
+POST /api/admin/reanalyze/{id}
+Header: Authorization: Bearer <admin_token>
+Response: { "success": true, "message": "Reanalysis queued" }
+
+# 获取用户列表
+GET /api/admin/users
+Header: Authorization: Bearer <admin_token>
+Response: { "users": [...] }
+
+# 系统清理
+POST /api/admin/cleanup
+Header: Authorization: Bearer <admin_token>
+Body: { "action": "r2|cache|database|all" }
+Response: { "success": true, "deleted": {...} }
 ```
+
+#### 速率限制
+
+| 接口 | 限制 | 说明 |
+|------|------|------|
+| `/api/send-code` | IP: 20次/小时<br>邮箱: 1次/分钟 | 验证码发送 |
+| `/api/login` | 2次失败后需验证码<br>10次失败锁定15分钟 | 暴力破解防护 |
+| `/api/upload` | 10次/小时（普通用户） | 上传限制 |
+| 其他公开接口 | 无限制 | 有 KV 缓存 |
 
 ## 🏗️ 技术架构
 
@@ -319,36 +540,197 @@ imageaigo/
 
 ## 🔧 维护管理
 
-### 修改管理员密码
+### 管理员账号管理
+
+使用 `admin-setup.sh` 脚本进行管理员账号管理：
 
 ```bash
-# 方法1：使用脚本
-./change-admin-password.sh
+./admin-setup.sh
 
-# 方法2：手动修改
-wrangler secret put ADMIN_PASSWORD
-wrangler secret put ADMIN_SECRET
-wrangler deploy
+# 功能选项：
+# 1) 完整设置 - 首次部署或重新配置
+# 2) 仅修改密码 - 修改管理员密码
+# 3) 仅修改密钥 - 修改会话密钥
+# 4) 检查配置 - 验证当前配置
 ```
 
-### 清理缓存
+**手动修改**（不推荐）：
+```bash
+wrangler secret put ADMIN_PASSWORD               # 输入新密码
+wrangler secret put ADMIN_SECRET                 # 输入新密钥
+wrangler deploy                                  # 重新部署
+```
+
+### Turnstile 配置管理
+
+使用 `turnstile.sh` 脚本管理 Turnstile 配置：
 
 ```bash
-# 清理 Sitemap 缓存
-./clear-sitemap-cache.sh
+./turnstile.sh
 
-# 通过管理后台清理
-访问 /admin → 系统管理 → 选择清理选项
+# 功能选项：
+# 1) 检查配置 - 查看当前 Turnstile 配置
+# 2) 更新 Site Key - 更新站点密钥
+# 3) 测试指南 - 查看测试说明
 ```
 
-### 查看日志
+**查看当前配置**：
+```bash
+./turnstile.sh                                   # 选择选项 1
+```
+
+**更新 Site Key**：
+```bash
+./turnstile.sh                                   # 选择选项 2
+# 输入新的 Site Key
+```
+
+### 系统清理
+
+使用 `cleanup.sh` 脚本清理系统资源：
+
+```bash
+./cleanup.sh
+
+# 功能选项：
+# 1) 清理 R2 存储 - 删除所有图片文件
+# 2) 清理 KV 缓存 - 清空所有缓存
+# 3) 清理 Sitemap 缓存 - 清空 Sitemap 缓存
+# 4) 全部清理 - 清理所有资源（谨慎使用！）
+# 5) 查看当前状态 - 查看资源使用情况
+```
+
+**通过 API 清理**：
+```bash
+# 清理 R2 存储
+curl -X POST https://imageaigo.cc/api/admin/cleanup \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "r2"}'
+
+# 清理 KV 缓存
+curl -X POST https://imageaigo.cc/api/admin/cleanup \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "cache"}'
+
+# 清理所有（危险操作！）
+curl -X POST https://imageaigo.cc/api/admin/cleanup \
+  -H "Authorization: Bearer YOUR_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "all"}'
+```
+
+### SEO 测试
+
+使用 `test-seo.sh` 脚本测试 SEO 配置：
+
+```bash
+./test-seo.sh
+
+# 功能选项：
+# 1) 测试 Sitemap - 检查 Sitemap 结构和内容
+# 2) 测试结构化数据 - 验证 Schema.org 标记
+# 3) 完整测试 - 运行所有 SEO 测试
+```
+
+**测试结果**：
+- ✅ Sitemap 格式正确
+- ✅ 图片 URL 可访问
+- ✅ 结构化数据有效
+- ✅ Open Graph 标签完整
+
+### 查看日志和状态
 
 ```bash
 # 实时查看 Worker 日志
 wrangler tail
 
+# 查看最近的日志（带过滤）
+wrangler tail --format pretty
+
 # 查看 Queue 状态
 wrangler queues list
+
+# 查看 D1 数据库信息
+wrangler d1 info imageaigo
+
+# 查看 R2 存储使用情况
+wrangler r2 bucket list
+
+# 查看 KV 命名空间
+wrangler kv:namespace list
+```
+
+### 数据库维护
+
+```bash
+# 备份数据库
+wrangler d1 export imageaigo --output=backup.sql
+
+# 执行 SQL 查询
+wrangler d1 execute imageaigo --command="SELECT COUNT(*) FROM images"
+
+# 查看数据库统计
+wrangler d1 execute imageaigo --command="
+  SELECT 
+    (SELECT COUNT(*) FROM images) as total_images,
+    (SELECT COUNT(*) FROM users) as total_users,
+    (SELECT COUNT(*) FROM tags) as total_tags
+"
+
+# 优化数据库（应用索引优化）
+wrangler d1 execute imageaigo --file=schema-optimize.sql --remote
+```
+
+### 监控和告警
+
+**性能监控**：
+```bash
+# 查看缓存命中率
+wrangler tail | grep "Cache.*Hit"
+
+# 查看 API 响应时间
+wrangler tail | grep "Response time"
+
+# 查看错误日志
+wrangler tail --format pretty | grep "ERROR"
+```
+
+**资源使用监控**：
+- 访问 [Cloudflare Dashboard](https://dash.cloudflare.com)
+- 查看 Workers Analytics
+- 监控 D1、R2、KV 使用量
+- 设置用量告警
+
+### 故障排查
+
+**常见问题诊断**：
+
+```bash
+# 检查 Worker 部署状态
+wrangler deployments list
+
+# 检查环境变量配置
+wrangler secret list
+
+# 测试数据库连接
+wrangler d1 execute imageaigo --command="SELECT 1"
+
+# 测试 R2 存储访问
+wrangler r2 object get imageaigo test.jpg
+
+# 查看详细错误日志
+wrangler tail --format json > logs.json
+```
+
+**回滚部署**：
+```bash
+# 查看部署历史
+wrangler deployments list
+
+# 回滚到指定版本
+wrangler rollback [deployment-id]
 ```
 
 ## 🔒 安全特性
