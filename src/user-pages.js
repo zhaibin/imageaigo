@@ -8,7 +8,7 @@
  */
 export function buildLoginPage(message = '', error = '') {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -271,12 +271,12 @@ export function buildLoginPage(message = '', error = '') {
       <form id="passwordLoginForm">
         <div class="form-group">
           <label for="email1">Email or Username</label>
-          <input type="text" id="email1" name="email" required autocomplete="username" class="normal-input">
+          <input type="text" id="email1" name="email" required autocomplete="username" class="normal-input" oninvalid="this.setCustomValidity('Please enter your email or username')" oninput="this.setCustomValidity('')">
         </div>
         
         <div class="form-group">
           <label for="password">Password</label>
-          <input type="password" id="password" name="password" required autocomplete="current-password" class="normal-input">
+          <input type="password" id="password" name="password" required autocomplete="current-password" class="normal-input" oninvalid="this.setCustomValidity('Please enter your password')" oninput="this.setCustomValidity('')">
         </div>
         
         <!-- Turnstile CAPTCHA (shown after 2 failed attempts) -->
@@ -297,13 +297,13 @@ export function buildLoginPage(message = '', error = '') {
       <form id="codeLoginForm">
         <div class="form-group">
           <label for="email2">Email or Username</label>
-          <input type="text" id="email2" name="email" required autocomplete="username" class="normal-input">
+          <input type="text" id="email2" name="email" required autocomplete="username" class="normal-input" oninvalid="this.setCustomValidity('Please enter your email or username')" oninput="this.setCustomValidity('')">
         </div>
         
         <div class="form-group">
           <label for="loginCode">Verification Code</label>
           <div class="input-with-button">
-            <input type="text" id="loginCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" class="code-input">
+            <input type="text" id="loginCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" class="code-input" oninvalid="this.setCustomValidity('Please enter the 6-digit verification code')" oninput="this.setCustomValidity('')">
             <button type="button" class="code-btn" id="sendLoginCodeBtn">Get Code</button>
           </div>
         </div>
@@ -369,7 +369,8 @@ export function buildLoginPage(message = '', error = '') {
       try {
         // 获取 Turnstile token（如果显示了验证）
         let turnstileToken = null;
-        if (document.getElementById('turnstileContainer1').classList.contains('show')) {
+        const container1 = document.getElementById('turnstileContainer1');
+        if (container1 && container1.classList.contains('show') && window.turnstile) {
           turnstileToken = turnstile.getResponse();
         }
         
@@ -489,7 +490,8 @@ export function buildLoginPage(message = '', error = '') {
       try {
         // 获取 Turnstile token（如果显示了验证）
         let turnstileToken = null;
-        if (document.getElementById('turnstileContainer2').classList.contains('show')) {
+        const container2 = document.getElementById('turnstileContainer2');
+        if (container2 && container2.classList.contains('show') && window.turnstile) {
           turnstileToken = turnstile.getResponse();
         }
         
@@ -548,7 +550,7 @@ export function buildLoginPage(message = '', error = '') {
  */
 export function buildRegisterPage(message = '', error = '') {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -768,13 +770,13 @@ export function buildRegisterPage(message = '', error = '') {
     <form id="registerForm">
       <div class="form-group">
         <label for="email">Email Address</label>
-        <input type="email" id="email" name="email" required autocomplete="email">
+        <input type="email" id="email" name="email" required autocomplete="email" oninvalid="this.setCustomValidity('Please enter a valid email address')" oninput="this.setCustomValidity('')">
       </div>
       
       <div class="form-group">
         <label for="verificationCode">Email Verification Code</label>
         <div class="input-with-button">
-          <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" class="code-input">
+          <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" class="code-input" oninvalid="this.setCustomValidity('Please enter the 6-digit verification code')" oninput="this.setCustomValidity('')">
           <button type="button" class="code-btn" id="sendCodeBtn">Get Code</button>
         </div>
         <div class="hint">Click "Get Code" to receive the verification code in your email</div>
@@ -782,19 +784,19 @@ export function buildRegisterPage(message = '', error = '') {
       
       <div class="form-group">
         <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autocomplete="username">
+        <input type="text" id="username" name="username" required autocomplete="username" oninvalid="this.setCustomValidity('Please enter a username (3-20 characters)')" oninput="this.setCustomValidity('')">
         <div class="hint">3-20 characters, letters, numbers, _ and - only</div>
       </div>
       
       <div class="form-group">
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="new-password">
+        <input type="password" id="password" name="password" required autocomplete="new-password" oninvalid="this.setCustomValidity('Please enter a password (8+ characters)')" oninput="this.setCustomValidity('')">
         <div class="hint">At least 8 characters with letters and numbers</div>
       </div>
       
       <div class="form-group">
         <label for="confirmPassword">Confirm Password</label>
-        <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
+        <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password" oninvalid="this.setCustomValidity('Please confirm your password')" oninput="this.setCustomValidity('')">
       </div>
       
       <button type="submit" class="btn" id="submitBtn">
@@ -949,7 +951,7 @@ export function buildRegisterPage(message = '', error = '') {
  */
 export function buildForgotPasswordPage(message = '', error = '') {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1126,7 +1128,7 @@ export function buildForgotPasswordPage(message = '', error = '') {
     <form id="forgotForm">
       <div class="form-group">
         <label for="email">Email Address</label>
-        <input type="email" id="email" name="email" required autocomplete="email">
+        <input type="email" id="email" name="email" required autocomplete="email" oninvalid="this.setCustomValidity('Please enter a valid email address')" oninput="this.setCustomValidity('')">
       </div>
       
       <button type="submit" class="btn" id="submitBtn">
@@ -1200,7 +1202,7 @@ export function buildForgotPasswordPage(message = '', error = '') {
  */
 export function buildResetPasswordPage(token = '', message = '', error = '') {
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en-US">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1384,13 +1386,13 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
       
       <div class="form-group">
         <label for="password">New Password</label>
-        <input type="password" id="password" name="password" required autocomplete="new-password">
+        <input type="password" id="password" name="password" required autocomplete="new-password" oninvalid="this.setCustomValidity('Please enter a new password (8+ characters)')" oninput="this.setCustomValidity('')">
         <div class="hint">At least 8 characters with letters and numbers</div>
       </div>
       
       <div class="form-group">
         <label for="confirmPassword">Confirm New Password</label>
-        <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password">
+        <input type="password" id="confirmPassword" name="confirmPassword" required autocomplete="new-password" oninvalid="this.setCustomValidity('Please confirm your new password')" oninput="this.setCustomValidity('')">
       </div>
       
       <button type="submit" class="btn" id="submitBtn">
