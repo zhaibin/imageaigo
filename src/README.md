@@ -44,9 +44,6 @@ src/
 │   ├── performance.js          # 性能优化（缓存策略、批量查询）
 │   └── validation.js           # 数据验证（输入检查）
 │
-├── client/                     # 客户端（1个文件）
-│   └── gallery.js              # 画廊客户端（瀑布流、懒加载）
-│
 ├── components/                 # 组件（1个文件）
 │   └── index.js                # 组件集合
 │
