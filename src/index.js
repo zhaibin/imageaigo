@@ -64,7 +64,12 @@ export default {
 
       // Sitemap
       if (path === '/sitemap.xml') {
-        return await handleSitemap(env);
+        return await handleSitemapIndex(env);
+      }
+      
+      // Sitemap pages
+      if (path.startsWith('/sitemap-')) {
+        return await handleSitemapPage(env, path);
       }
 
       // Robots.txt
@@ -3674,13 +3679,17 @@ async function handleAdminReanalyzeImage(request, env, imageId) {
   }
 }
 
-// Sitemap 处理
-async function handleSitemap(env) {
+// Sitemap Index 处理
+// 符合 Google Search Console 规范：
+// - 使用 sitemap index 组织多个 sitemap
+// - 每个 sitemap 最多 50,000 个 URL
+// - 未压缩文件不超过 50MB
+async function handleSitemapIndex(env) {
   try {
     // 检查缓存
-    const cached = await env.CACHE.get('sitemap:xml');
+    const cached = await env.CACHE.get('sitemap:index');
     if (cached) {
-      console.log('[Sitemap] Using cached version');
+      console.log('[SitemapIndex] Using cached version');
       return new Response(cached, {
         headers: {
           'Content-Type': 'application/xml;charset=UTF-8',
@@ -3691,111 +3700,58 @@ async function handleSitemap(env) {
     }
 
     const baseUrl = 'https://imageaigo.cc';
-    const now = new Date().toISOString();
+    const formatDate = (date) => {
+      const d = date ? new Date(date) : new Date();
+      return d.toISOString().split('T')[0];
+    };
+    const today = formatDate();
     
-    let urls = [];
+    // 获取图片总数以确定需要多少个分页 sitemap
+    const { total } = await env.DB.prepare('SELECT COUNT(*) as total FROM images').first();
+    const imagesPerPage = 5000; // 每个 sitemap 包含 5000 张图片
+    const imageSitemapCount = Math.ceil(total / imagesPerPage);
     
-    // 1. 首页（最高优先级）
-    urls.push({
-      loc: baseUrl + '/',
-      lastmod: now,
-      changefreq: 'daily',
-      priority: '1.0'
+    const sitemaps = [];
+    
+    // 主要页面 sitemap
+    sitemaps.push({
+      loc: baseUrl + '/sitemap-main.xml',
+      lastmod: today
     });
     
-    // 2. 主要页面
-    urls.push(
-      { loc: baseUrl + '/images', lastmod: now, changefreq: 'daily', priority: '0.9' },
-      { loc: baseUrl + '/search', lastmod: now, changefreq: 'daily', priority: '0.8' },
-      { loc: baseUrl + '/about', lastmod: now, changefreq: 'monthly', priority: '0.5' },
-      { loc: baseUrl + '/privacy', lastmod: now, changefreq: 'monthly', priority: '0.3' },
-      { loc: baseUrl + '/terms', lastmod: now, changefreq: 'monthly', priority: '0.3' }
-    );
-    
-    // 3. 所有图片详情页（最多1000张）
-    const { results: images } = await env.DB.prepare(`
-      SELECT slug, created_at 
-      FROM images 
-      ORDER BY created_at DESC 
-      LIMIT 1000
-    `).all();
-    
-    images.forEach(img => {
-      // 确保时间格式为标准 ISO 8601
-      const lastmod = img.created_at ? new Date(img.created_at).toISOString() : now;
-      urls.push({
-        loc: baseUrl + '/image/' + img.slug,
-        lastmod: lastmod,
-        changefreq: 'weekly',
-        priority: '0.8'
+    // 图片 sitemap（分页）
+    for (let i = 1; i <= imageSitemapCount; i++) {
+      sitemaps.push({
+        loc: baseUrl + `/sitemap-images-${i}.xml`,
+        lastmod: today
       });
+    }
+    
+    // 分类 sitemap
+    sitemaps.push({
+      loc: baseUrl + '/sitemap-categories.xml',
+      lastmod: today
     });
     
-    // 4. 所有分类页（level 1 tags，至少5张图片）
-    const { results: categories } = await env.DB.prepare(`
-      SELECT t.name, MAX(i.created_at) as last_update
-      FROM tags t
-      JOIN image_tags it ON t.id = it.tag_id
-      JOIN images i ON it.image_id = i.id
-      WHERE t.level = 1
-      GROUP BY t.id, t.name
-      HAVING COUNT(DISTINCT i.id) >= 5
-      ORDER BY COUNT(DISTINCT i.id) DESC
-    `).all();
-    
-    categories.forEach(cat => {
-      // 确保时间格式为标准 ISO 8601
-      const lastmod = cat.last_update ? new Date(cat.last_update).toISOString() : now;
-      urls.push({
-        loc: baseUrl + '/category/' + encodeURIComponent(cat.name),
-        lastmod: lastmod,
-        changefreq: 'weekly',
-        priority: '0.7'
-      });
+    // 标签 sitemap
+    sitemaps.push({
+      loc: baseUrl + '/sitemap-tags.xml',
+      lastmod: today
     });
     
-    // 5. 热门标签页（level 2-3 tags，至少3张图片）
-    const { results: tags } = await env.DB.prepare(`
-      SELECT t.name, t.level, MAX(i.created_at) as last_update
-      FROM tags t
-      JOIN image_tags it ON t.id = it.tag_id
-      JOIN images i ON it.image_id = i.id
-      WHERE t.level > 1
-      GROUP BY t.id, t.name, t.level
-      HAVING COUNT(DISTINCT i.id) >= 3
-      ORDER BY COUNT(DISTINCT i.id) DESC
-      LIMIT 200
-    `).all();
-    
-    tags.forEach(tag => {
-      // 确保时间格式为标准 ISO 8601
-      const lastmod = tag.last_update ? new Date(tag.last_update).toISOString() : now;
-      urls.push({
-        loc: baseUrl + '/tag/' + encodeURIComponent(tag.name),
-        lastmod: lastmod,
-        changefreq: 'weekly',
-        priority: '0.6'
-      });
-    });
-    
-    // 生成 XML（不要对 URL 进行 HTML 转义）
+    // 生成 Sitemap Index XML
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
-        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
-${urls.map(url => `  <url>
-    <loc>${url.loc}</loc>
-    <lastmod>${url.lastmod}</lastmod>
-    <changefreq>${url.changefreq}</changefreq>
-    <priority>${url.priority}</priority>
-  </url>`).join('\n')}
-</urlset>`;
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${sitemaps.map(sitemap => `  <sitemap>
+    <loc>${sitemap.loc}</loc>
+    <lastmod>${sitemap.lastmod}</lastmod>
+  </sitemap>`).join('\n')}
+</sitemapindex>`;
     
     // 缓存1小时
-    await env.CACHE.put('sitemap:xml', xml, { expirationTtl: 3600 });
+    await env.CACHE.put('sitemap:index', xml, { expirationTtl: 3600 });
     
-    console.log(`[Sitemap] Generated with ${urls.length} URLs`);
+    console.log(`[SitemapIndex] Generated with ${sitemaps.length} sitemaps`);
     
     return new Response(xml, {
       headers: {
@@ -3805,9 +3761,194 @@ ${urls.map(url => `  <url>
       }
     });
   } catch (error) {
-    console.error('[Sitemap] Error:', error);
+    console.error('[SitemapIndex] Error:', error);
+    return new Response('Error generating sitemap index', { status: 500 });
+  }
+}
+
+// Sitemap 分页处理
+// 符合 Google Search Console 规范
+async function handleSitemapPage(env, path) {
+  try {
+    const cacheKey = 'sitemap:' + path.replace('/sitemap-', '').replace('.xml', '');
+    const cached = await env.CACHE.get(cacheKey);
+    if (cached) {
+      console.log(`[Sitemap] Using cached version for ${path}`);
+      return new Response(cached, {
+        headers: {
+          'Content-Type': 'application/xml;charset=UTF-8',
+          'Cache-Control': 'public, max-age=3600',
+          'X-Robots-Tag': 'all'
+        }
+      });
+    }
+
+    const baseUrl = 'https://imageaigo.cc';
+    const formatDate = (date) => {
+      const d = date ? new Date(date) : new Date();
+      return d.toISOString().split('T')[0];
+    };
+    const today = formatDate();
+    
+    let urls = [];
+    
+    // 主要页面
+    if (path === '/sitemap-main.xml') {
+      urls.push(
+        { loc: baseUrl + '/', lastmod: today, changefreq: 'daily', priority: '1.0' },
+        { loc: baseUrl + '/images', lastmod: today, changefreq: 'daily', priority: '0.9' },
+        { loc: baseUrl + '/search', lastmod: today, changefreq: 'daily', priority: '0.8' },
+        { loc: baseUrl + '/about', lastmod: today, changefreq: 'monthly', priority: '0.5' },
+        { loc: baseUrl + '/privacy', lastmod: today, changefreq: 'monthly', priority: '0.3' },
+        { loc: baseUrl + '/terms', lastmod: today, changefreq: 'monthly', priority: '0.3' }
+      );
+    }
+    // 图片分页
+    else if (path.startsWith('/sitemap-images-')) {
+      const pageMatch = path.match(/\/sitemap-images-(\d+)\.xml/);
+      if (pageMatch) {
+        const page = parseInt(pageMatch[1]);
+        const limit = 5000;
+        const offset = (page - 1) * limit;
+        
+        const { results: images } = await env.DB.prepare(`
+          SELECT slug, image_url, created_at 
+          FROM images 
+          ORDER BY created_at DESC 
+          LIMIT ? OFFSET ?
+        `).bind(limit, offset).all();
+        
+        images.forEach(img => {
+          urls.push({
+            loc: baseUrl + '/image/' + img.slug,
+            lastmod: formatDate(img.created_at),
+            changefreq: 'weekly',
+            priority: '0.8',
+            image: img.image_url
+          });
+        });
+      }
+    }
+    // 分类页面
+    else if (path === '/sitemap-categories.xml') {
+      const { results: categories } = await env.DB.prepare(`
+        SELECT t.name, MAX(i.created_at) as last_update
+        FROM tags t
+        JOIN image_tags it ON t.id = it.tag_id
+        JOIN images i ON it.image_id = i.id
+        WHERE t.level = 1
+        GROUP BY t.id, t.name
+        HAVING COUNT(DISTINCT i.id) >= 5
+        ORDER BY COUNT(DISTINCT i.id) DESC
+      `).all();
+      
+      categories.forEach(cat => {
+        urls.push({
+          loc: baseUrl + '/category/' + encodeURIComponent(cat.name),
+          lastmod: formatDate(cat.last_update),
+          changefreq: 'weekly',
+          priority: '0.7'
+        });
+      });
+    }
+    // 标签页面
+    else if (path === '/sitemap-tags.xml') {
+      const { results: tags } = await env.DB.prepare(`
+        SELECT t.name, t.level, MAX(i.created_at) as last_update
+        FROM tags t
+        JOIN image_tags it ON t.id = it.tag_id
+        JOIN images i ON it.image_id = i.id
+        WHERE t.level > 1
+        GROUP BY t.id, t.name, t.level
+        HAVING COUNT(DISTINCT i.id) >= 3
+        ORDER BY COUNT(DISTINCT i.id) DESC
+      `).all();
+      
+      tags.forEach(tag => {
+        urls.push({
+          loc: baseUrl + '/tag/' + encodeURIComponent(tag.name),
+          lastmod: formatDate(tag.last_update),
+          changefreq: 'weekly',
+          priority: '0.6'
+        });
+      });
+    }
+    
+    if (urls.length === 0) {
+      return new Response('Sitemap not found', { status: 404 });
+    }
+    
+    // 生成 XML（符合 Google Search Console 规范）
+    const xml = generateSitemapXML(urls);
+    
+    // 缓存1小时
+    await env.CACHE.put(cacheKey, xml, { expirationTtl: 3600 });
+    
+    console.log(`[Sitemap] Generated ${path} with ${urls.length} URLs`);
+    
+    return new Response(xml, {
+      headers: {
+        'Content-Type': 'application/xml;charset=UTF-8',
+        'Cache-Control': 'public, max-age=3600',
+        'X-Robots-Tag': 'all'
+      }
+    });
+  } catch (error) {
+    console.error(`[Sitemap] Error generating ${path}:`, error);
     return new Response('Error generating sitemap', { status: 500 });
   }
+}
+
+// 生成 Sitemap XML（符合 Google Search Console 规范）
+function generateSitemapXML(urls) {
+  // XML 转义函数
+  const escapeXml = (str) => {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/'/g, '&apos;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  };
+  
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9
+        http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+${urls.map(url => {
+  let urlEntry = `  <url>
+    <loc>${escapeXml(url.loc)}</loc>
+    <lastmod>${url.lastmod}</lastmod>`;
+  
+  // changefreq 和 priority 是可选的
+  if (url.changefreq) {
+    urlEntry += `
+    <changefreq>${url.changefreq}</changefreq>`;
+  }
+  if (url.priority) {
+    urlEntry += `
+    <priority>${url.priority}</priority>`;
+  }
+  
+  // 添加图片扩展（如果有图片）
+  if (url.image) {
+    urlEntry += `
+    <image:image>
+      <image:loc>${escapeXml(url.image)}</image:loc>
+    </image:image>`;
+  }
+  
+  urlEntry += `
+  </url>`;
+  
+  return urlEntry;
+}).join('\n')}
+</urlset>`;
+  
+  return xml;
 }
 
 // 修复缺失标签的图片
