@@ -2,6 +2,50 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.3.1] - 2025-10-21
+
+### 🔧 Bug Fixes
+
+#### Fixed Cloudflare Turnstile Widget Rendering
+
+**Issue**: Turnstile human verification widget was not displaying correctly on the login page.
+
+**Root Cause**: 
+- Used automatic rendering (`data-sitekey` attribute)
+- Widget container was initially hidden (`display: none`)
+- Turnstile API couldn't initialize hidden elements
+
+**Solution**:
+- Switched to explicit rendering using `turnstile.render()`
+- Render widget only when container becomes visible
+- Improved widget ID management and reset logic
+
+**Changes**:
+- ✅ Updated `src/user-pages.js`:
+  - Added `showTurnstile()` function for explicit rendering
+  - Removed `data-sitekey` from HTML (manual render only)
+  - Added `turnstileWidget1` and `turnstileWidget2` tracking variables
+  - Improved error handling with try-catch blocks
+  
+- ✅ Added Documentation:
+  - `TURNSTILE-SETUP.md` - Complete configuration guide
+  - `TURNSTILE-TEST.md` - Testing procedures
+  - `check-turnstile.sh` - Configuration checker script
+
+**Impact**:
+- 🛡️ Turnstile now displays correctly after 2 failed login attempts
+- ✅ Widget properly resets between attempts
+- ✅ Works on both password and code login tabs
+- ✅ Better error handling and debugging
+
+**Testing**:
+1. Visit https://imageaigo.cc/login
+2. Enter wrong credentials 2 times
+3. Turnstile widget should appear
+4. Complete verification and login successfully
+
+---
+
 ## [v3.0.0] - 2025-10-21
 
 ### 🔐 Email Verification Code Authentication System
