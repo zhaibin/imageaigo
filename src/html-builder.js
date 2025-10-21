@@ -126,7 +126,9 @@ export function buildMainHTML() {
 </head>
 <body itemscope itemtype="https://schema.org/WebPage">
     <div class="container">
-        <header role="banner">
+        <header role="banner" style="position: relative;">
+            <div id="headerUserNav" style="position: absolute; top: 0; right: 0; display: flex; gap: 15px; align-items: center;"></div>
+            
             <div style="display: flex; align-items: center; justify-content: center; gap: 15px; margin-bottom: 10px;">
                 <svg width="48" height="48" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <defs>
@@ -351,6 +353,15 @@ function getClientScript() {
 
     async function handleFileUpload(file) {
         try {
+            // 检查登录状态
+            if (!currentUser) {
+                const shouldLogin = confirm('Please log in to upload and analyze images. Go to login page?');
+                if (shouldLogin) {
+                    window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+                }
+                return;
+            }
+            
             if (loading) loading.style.display = 'block';
             updateLoadingStatus('Preparing image...', \`Original size: \${(file.size / 1024).toFixed(2)} KB\`);
             updateLoadingStatus('Compressing for AI...', 'Creating optimized version');
@@ -369,6 +380,15 @@ function getClientScript() {
 
     async function handleUrlAnalysis(url) {
         try {
+            // 检查登录状态
+            if (!currentUser) {
+                const shouldLogin = confirm('Please log in to upload and analyze images. Go to login page?');
+                if (shouldLogin) {
+                    window.location.href = '/login?redirect=' + encodeURIComponent(window.location.pathname);
+                }
+                return;
+            }
+            
             if (loading) loading.style.display = 'block';
             updateLoadingStatus('Fetching image from URL...');
             const response = await fetch(url, { mode: 'cors' });
@@ -1021,47 +1041,59 @@ function getClientScript() {
         }, 500);
     });
 
-    // 检查用户登录状态并显示footer导航
+    // 检查用户登录状态并显示右上角导航
+    let currentUser = null;
+    
     async function checkUserAuth() {
       try {
         const response = await fetch('/api/auth/me');
         const data = await response.json();
         
+        const headerUserNav = document.getElementById('headerUserNav');
         const footerUserNav = document.getElementById('footerUserNav');
-        if (!footerUserNav) return;
         
         if (data.success && data.user) {
+          currentUser = data.user;
           // 已登录，显示用户信息和退出
-          footerUserNav.innerHTML = 
-            '<a href="/profile" style="color: white; margin: 0 15px; text-decoration: none;">👤 ' + (data.user.username || 'User') + '</a>' +
-            '<a href="#" onclick="logout(); return false;" style="color: white; margin: 0 15px; text-decoration: none;">Logout</a>';
+          const userNavHTML = 
+            '<a href="/profile" style="color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; background: rgba(255,255,255,0.1); transition: all 0.3s;">👤 ' + (data.user.username || 'User') + '</a>' +
+            '<a href="#" onclick="logout(); return false;" style="color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; background: rgba(255,255,255,0.1); transition: all 0.3s;">Logout</a>';
+          
+          if (headerUserNav) headerUserNav.innerHTML = userNavHTML;
+          if (footerUserNav) footerUserNav.innerHTML = '';
         } else {
+          currentUser = null;
           // 未登录，显示登录和注册按钮
-          footerUserNav.innerHTML = 
-            '<a href="/login" style="color: white; margin: 0 15px; text-decoration: none;">Login</a>' +
-            '<a href="/register" style="color: white; margin: 0 15px; text-decoration: none;">Sign Up</a>';
+          const authNavHTML = 
+            '<a href="/login" style="color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; background: rgba(255,255,255,0.1); transition: all 0.3s;">Login</a>' +
+            '<a href="/register" style="color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; background: rgba(255,255,255,0.15); font-weight: 600; transition: all 0.3s;">Sign Up</a>';
+          
+          if (headerUserNav) headerUserNav.innerHTML = authNavHTML;
+          if (footerUserNav) footerUserNav.innerHTML = '';
         }
       } catch (error) {
         console.log('[Auth] Not logged in');
+        currentUser = null;
+        const headerUserNav = document.getElementById('headerUserNav');
         const footerUserNav = document.getElementById('footerUserNav');
-        if (footerUserNav) {
-          footerUserNav.innerHTML = 
-            '<a href="/login" style="color: white; margin: 0 15px; text-decoration: none;">Login</a>' +
-            '<a href="/register" style="color: white; margin: 0 15px; text-decoration: none;">Sign Up</a>';
-        }
+        
+        const authNavHTML = 
+          '<a href="/login" style="color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; background: rgba(255,255,255,0.1); transition: all 0.3s;">Login</a>' +
+          '<a href="/register" style="color: white; text-decoration: none; padding: 8px 16px; border-radius: 6px; background: rgba(255,255,255,0.15); font-weight: 600; transition: all 0.3s;">Sign Up</a>';
+        
+        if (headerUserNav) headerUserNav.innerHTML = authNavHTML;
+        if (footerUserNav) footerUserNav.innerHTML = '';
       }
     }
     
-    // 退出登录
+    // 退出登录（无确认对话框）
     async function logout() {
-      if (confirm('Are you sure you want to logout?')) {
-        try {
-          await fetch('/api/auth/logout', { method: 'POST' });
-          window.location.reload();
-        } catch (error) {
-          console.error('Logout error:', error);
-          window.location.reload();
-        }
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        window.location.reload();
+      } catch (error) {
+        console.error('Logout error:', error);
+        window.location.reload();
       }
     }
 

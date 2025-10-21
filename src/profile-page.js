@@ -636,14 +636,12 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
     }
     
     async function logout() {
-      if (confirm('Are you sure you want to logout?')) {
-        try {
-          await fetch('/api/auth/logout', { method: 'POST' });
-          window.location.href = '/login';
-        } catch (error) {
-          console.error('Logout error:', error);
-          window.location.href = '/login';
-        }
+      try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        window.location.href = '/';
+      } catch (error) {
+        console.error('Logout error:', error);
+        window.location.href = '/';
       }
     }
     
