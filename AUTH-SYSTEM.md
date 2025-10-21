@@ -1,8 +1,14 @@
 # Authentication System - Email Verification Code
 
+## 🎉 Status: Fully Deployed & Operational
+
+**Version**: 3.0.0  
+**Deployment**: https://imageaigo.cc  
+**GitHub**: https://github.com/zhaibin/imageaigo
+
 ## Overview
 
-This application uses email verification codes for secure user authentication via Resend.com API.
+This application uses email verification codes for secure user authentication via Resend.com API. All pages are now updated with full verification code support.
 
 ## Features
 
@@ -116,27 +122,56 @@ Authorization: Bearer <session_token>
 RESEND_API_TOKEN=re_xxxxxxxxxxxx
 ```
 
-## Setup
+## Setup (✅ Already Deployed)
 
-1. **Configure Resend.com**
+1. **Configure Resend.com** ✅
    - Sign up at https://resend.com
    - Verify domain: imageaigo.cc
    - Create API key
 
-2. **Set Environment Variable**
+2. **Set Environment Variable** ⚠️ Required
    ```bash
    wrangler secret put RESEND_API_TOKEN
    ```
 
-3. **Update Database**
+3. **Update Database** ✅
    ```bash
    wrangler d1 execute <DB_NAME> --file=schema.sql
    ```
 
-4. **Deploy**
+4. **Deploy** ✅
    ```bash
    wrangler deploy
    ```
+
+## Frontend Pages (✅ All Updated)
+
+All user authentication pages have been updated with verification code support:
+
+### 1. Register Page ✅
+- Email input with "Get Code" button
+- 6-digit verification code input
+- 60-second countdown timer
+- Username format validation
+- Password strength validation
+
+### 2. Login Page ✅
+- Dual-tab interface:
+  - **Password Login**: Email/Username + Password
+  - **Code Login**: Email/Username + Verification Code
+- Tab switching with smooth transitions
+- "Get Code" button with countdown
+
+### 3. Forgot Password Page ✅
+- Email input
+- "Send Verification Code" button
+- Link to reset password page
+
+### 4. Reset Password Page ✅
+- Email input
+- Verification code input (6-digit)
+- New password input
+- Password confirmation
 
 ## Email Templates
 
