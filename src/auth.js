@@ -4,6 +4,7 @@
  */
 
 import { sendCode, verifyCode } from './verification-code.js';
+import { sendPasswordResetEmail } from './email-service.js';
 
 /**
  * 密码哈希函数（使用 Web Crypto API）
