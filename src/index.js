@@ -1219,6 +1219,20 @@ async function handleImageDetailPage(request, env, imageSlug) {
     return new Response('Invalid image slug', { status: 400 });
   }
   
+  // ✨ 优化1：添加页面级别缓存
+  const cacheKey = `page:image:${imageSlug}`;
+  const cached = await env.CACHE.get(cacheKey);
+  if (cached) {
+    console.log(`[Cache] Hit for image detail page: ${imageSlug}`);
+    return new Response(cached, {
+      headers: { 
+        'Content-Type': 'text/html;charset=UTF-8',
+        'Cache-Control': 'public, max-age=300', // 5分钟浏览器缓存
+        'X-Cache': 'HIT'
+      }
+    });
+  }
+  
   const image = await env.DB.prepare(
     `SELECT i.*, (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
      u.username, u.display_name, u.avatar_url
@@ -1231,14 +1245,18 @@ async function handleImageDetailPage(request, env, imageSlug) {
     return new Response('Image not found', { status: 404 });
   }
   
-  const { results: tags } = await env.DB.prepare(`
-    SELECT t.name, t.level, it.weight
-    FROM tags t JOIN image_tags it ON t.id = it.tag_id
-    WHERE it.image_id = ?
-    ORDER BY t.level, it.weight DESC
-  `).bind(image.id).all();
+  // ✨ 优化2：并行查询标签和推荐
+  const [tagsResult, recommendations] = await Promise.all([
+    env.DB.prepare(`
+      SELECT t.name, t.level, it.weight
+      FROM tags t JOIN image_tags it ON t.id = it.tag_id
+      WHERE it.image_id = ?
+      ORDER BY t.level, it.weight DESC
+    `).bind(image.id).all(),
+    getRecommendations(env.DB, image.id, 6)
+  ]);
   
-  const recommendations = await getRecommendations(env.DB, image.id, 6);
+  const tags = tagsResult.results;
   
   const tagsList = tags.map(tag => `
     <a href="/tag/${encodeURIComponent(tag.name)}" class="tag level-${tag.level}">
@@ -1713,8 +1731,16 @@ async function handleImageDetailPage(request, env, imageSlug) {
 </body>
 </html>`;
   
+  // ✨ 优化3：缓存页面 HTML（10分钟）
+  env.CACHE.put(cacheKey, detailHTML, { expirationTtl: 600 })
+    .catch(err => console.warn('[Cache] Failed to cache detail page:', err.message));
+  
   return new Response(detailHTML, {
-    headers: { 'Content-Type': 'text/html;charset=UTF-8', 'Cache-Control': 'public, max-age=600' }
+    headers: { 
+      'Content-Type': 'text/html;charset=UTF-8', 
+      'Cache-Control': 'public, max-age=300', // ✨ 5分钟浏览器/CDN缓存
+      'X-Cache': 'MISS'
+    }
   });
 }
 
