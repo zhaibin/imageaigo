@@ -61,14 +61,14 @@ wrangler secret put TURNSTILE_SECRET_KEY
 
 ### Step 4: Update Frontend Site Key (if needed)
 
-If your Site Key is different from `0x4AAAAAAAzX8PJx0lF_CDHO`, update it in:
+If your Site Key is different from `0x4AAAAAAACxIrRaibzD1pfM`, update it in:
 
 **File**: `src/user-pages.js`
 
 Find and replace both instances:
 ```html
 <!-- Old -->
-<div class="cf-turnstile" data-sitekey="0x4AAAAAAAzX8PJx0lF_CDHO" ...></div>
+<div class="cf-turnstile" data-sitekey="0x4AAAAAAACxIrRaibzD1pfM" ...></div>
 
 <!-- New -->
 <div class="cf-turnstile" data-sitekey="YOUR_SITE_KEY_HERE" ...></div>
@@ -181,7 +181,7 @@ wrangler tail
 2. **Render Widget** (when needed)
    ```html
    <div class="cf-turnstile" 
-        data-sitekey="0x4AAAAAAAzX8PJx0lF_CDHO" 
+        data-sitekey="0x4AAAAAAACxIrRaibzD1pfM" 
         data-theme="light">
    </div>
    ```
@@ -229,7 +229,7 @@ wrangler tail
 ### ✅ Already Configured
 - [x] Frontend script loaded
 - [x] Widget HTML added
-- [x] Site Key in frontend (`0x4AAAAAAAzX8PJx0lF_CDHO`)
+- [x] Site Key in frontend (`0x4AAAAAAACxIrRaibzD1pfM`)
 - [x] Backend verification code
 - [x] Failure tracking logic
 - [x] Progressive CAPTCHA display
@@ -260,7 +260,7 @@ https://dash.cloudflare.com/?to=/:account/turnstile
    - Select "Managed" mode
 
 4. **Copy Keys**
-   - **Site Key**: Use in frontend (already done if using `0x4AAAAAAAzX8PJx0lF_CDHO`)
+   - **Site Key**: Use in frontend (already done if using `0x4AAAAAAACxIrRaibzD1pfM`)
    - **Secret Key**: Configure in Wrangler secrets
 
 ---

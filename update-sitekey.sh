@@ -4,7 +4,7 @@
 
 echo "🔑 Turnstile Site Key 更新工具"
 echo ""
-echo "当前站点密钥: 0x4AAAAAAAzX8PJx0lF_CDHO"
+echo "当前站点密钥: 0x4AAAAAAACxIrRaibzD1pfM"
 echo ""
 read -p "请输入你的新站点密钥（或直接回车保持当前值）: " NEW_SITEKEY
 
@@ -24,7 +24,7 @@ fi
 
 # 更新 src/user-pages.js
 echo "📝 更新 src/user-pages.js..."
-sed -i.bak "s/sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO'/sitekey: '$NEW_SITEKEY'/g" src/user-pages.js
+sed -i.bak "s/sitekey: '0x4AAAAAAACxIrRaibzD1pfM'/sitekey: '$NEW_SITEKEY'/g" src/user-pages.js
 
 if [ $? -eq 0 ]; then
     echo "✅ 站点密钥已更新"

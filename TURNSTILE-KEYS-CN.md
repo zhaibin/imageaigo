@@ -18,7 +18,7 @@ Cloudflare Turnstile 使用两个密钥：
 **位置**: `src/user-pages.js` 第 381 行
 
 ```javascript
-sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO'
+sitekey: '0x4AAAAAAACxIrRaibzD1pfM'
 ```
 
 ✅ **已硬编码在前端**，无需通过环境变量配置
@@ -55,8 +55,8 @@ TURNSTILE_SECRET_KEY ✅
 
    | 你的站点密钥 | 代码中的密钥 | 需要操作 |
    |------------|------------|---------|
-   | `0x4AAAAAAAzX8PJx0lF_CDHO` | `0x4AAAAAAAzX8PJx0lF_CDHO` | ✅ 无需操作 |
-   | `0x4AAAAAAA...`（其他值） | `0x4AAAAAAAzX8PJx0lF_CDHO` | ⚠️ 需要更新 |
+   | `0x4AAAAAAACxIrRaibzD1pfM` | `0x4AAAAAAACxIrRaibzD1pfM` | ✅ 无需操作 |
+   | `0x4AAAAAAA...`（其他值） | `0x4AAAAAAACxIrRaibzD1pfM` | ⚠️ 需要更新 |
 
 ---
 
@@ -76,7 +76,7 @@ TURNSTILE_SECRET_KEY ✅
 
 2. **找到这一行**（约第 381 行）：
    ```javascript
-   sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO',
+   sitekey: '0x4AAAAAAACxIrRaibzD1pfM',
    ```
 
 3. **替换为你的站点密钥**：
@@ -102,7 +102,7 @@ TURNSTILE_SECRET_KEY ✅
 
 - [x] 站点密钥已配置
   ```javascript
-  sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO'
+  sitekey: '0x4AAAAAAACxIrRaibzD1pfM'
   ```
 
 - [x] Widget 容器已创建
@@ -241,5 +241,5 @@ wrangler secret list | grep TURNSTILE
 
 ---
 
-**如果你的站点密钥就是 `0x4AAAAAAAzX8PJx0lF_CDHO`，那么配置已经完成，直接测试即可！** ✅
+**如果你的站点密钥就是 `0x4AAAAAAACxIrRaibzD1pfM`，那么配置已经完成，直接测试即可！** ✅
 

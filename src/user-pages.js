@@ -378,7 +378,7 @@ export function buildLoginPage(message = '', error = '') {
         try {
           const elementId = containerId === 'turnstileContainer1' ? 'turnstile1' : 'turnstile2';
           const newWidgetId = turnstile.render('#' + elementId, {
-            sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO',
+            sitekey: '0x4AAAAAAACxIrRaibzD1pfM',
             theme: 'light'
           });
           return newWidgetId;

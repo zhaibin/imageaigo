@@ -23,7 +23,7 @@ function showTurnstile(widgetId, containerId) {
   container.classList.add('show'); // 先显示容器
   
   const widgetId = turnstile.render('#turnstile1', {
-    sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO',
+    sitekey: '0x4AAAAAAACxIrRaibzD1pfM',
     theme: 'light'
   });
   
@@ -171,7 +171,7 @@ const token = turnstile.getResponse(turnstileWidget1);
 A: 检查浏览器控制台是否有 `challenges.cloudflare.com` 被屏蔽
 
 **Q: 显示但无法交互？**
-A: 检查 Site Key 是否正确（应为 `0x4AAAAAAAzX8PJx0lF_CDHO`）
+A: 检查 Site Key 是否正确（应为 `0x4AAAAAAACxIrRaibzD1pfM`）
 
 **Q: 完成验证但登录失败？**
 A: 运行 `wrangler secret list` 确认 `TURNSTILE_SECRET_KEY` 已配置

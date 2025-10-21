@@ -14,9 +14,9 @@ NC='\033[0m' # No Color
 
 # Check 1: Frontend Site Key
 echo "1️⃣ Checking Frontend Site Key..."
-if grep -q "data-sitekey=\"0x4AAAAAAAzX8PJx0lF_CDHO\"" src/user-pages.js; then
+if grep -q "data-sitekey=\"0x4AAAAAAACxIrRaibzD1pfM\"" src/user-pages.js; then
     echo -e "${GREEN}✅ Site Key found in frontend${NC}"
-    SITE_KEY="0x4AAAAAAAzX8PJx0lF_CDHO"
+    SITE_KEY="0x4AAAAAAACxIrRaibzD1pfM"
     echo "   Site Key: $SITE_KEY"
 else
     echo -e "${RED}❌ Site Key not found in frontend${NC}"
@@ -102,7 +102,7 @@ else
     echo "   wrangler secret put TURNSTILE_SECRET_KEY"
     echo ""
     echo "4️⃣ (Optional) Update Site Key in src/user-pages.js"
-    echo "   Current: 0x4AAAAAAAzX8PJx0lF_CDHO"
+    echo "   Current: 0x4AAAAAAACxIrRaibzD1pfM"
     echo "   Replace with your Site Key if different"
     echo ""
     echo "5️⃣ Deploy:"

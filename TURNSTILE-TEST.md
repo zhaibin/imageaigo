@@ -87,7 +87,7 @@ console.log('Code Fail Count:', codeFailCount);
 **解决方案**:
 ```bash
 # 检查前端代码
-grep -r "0x4AAAAAAAzX8PJx0lF_CDHO" src/user-pages.js
+grep -r "0x4AAAAAAACxIrRaibzD1pfM" src/user-pages.js
 
 # 应该在 showTurnstile 函数中看到
 ```
@@ -99,7 +99,7 @@ grep -r "0x4AAAAAAAzX8PJx0lF_CDHO" src/user-pages.js
 **解决方案**:
 1. 登录 Cloudflare Dashboard
 2. 前往 Turnstile 设置
-3. 确认 Site Key: `0x4AAAAAAAzX8PJx0lF_CDHO`
+3. 确认 Site Key: `0x4AAAAAAACxIrRaibzD1pfM`
 4. 如果不同，更新 `src/user-pages.js` 中的 `sitekey` 值
 
 ### 问题 4: 后端验证失败
@@ -133,7 +133,7 @@ wrangler secret put TURNSTILE_SECRET_KEY
 **之前（自动渲染）**:
 ```html
 <div class="cf-turnstile" 
-     data-sitekey="0x4AAAAAAAzX8PJx0lF_CDHO" 
+     data-sitekey="0x4AAAAAAACxIrRaibzD1pfM" 
      data-theme="light" 
      id="turnstile1">
 </div>
@@ -151,7 +151,7 @@ function showTurnstile(widgetId, containerId) {
   
   // 显式渲染
   const newWidgetId = turnstile.render('#turnstile1', {
-    sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO',
+    sitekey: '0x4AAAAAAACxIrRaibzD1pfM',
     theme: 'light'
   });
   
