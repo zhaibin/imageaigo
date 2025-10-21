@@ -22,10 +22,21 @@
 - **PWA 支持** - 可安装、离线浏览、Service Worker 缓存
 
 ### 🔐 完整用户系统
-- **用户注册登录** - 邮箱注册、密码加密、会话管理
-- **密码找回** - 安全的密码重置流程
+- **双重登录方式** - 邮箱验证码登录 + 密码登录
+- **邮箱验证** - 注册、登录、密码重置均支持验证码
+- **密码安全** - SHA-256 加密、密码重置链接（1小时有效）
+- **会话管理** - JWT-like token、自动过期、多设备登录
+- **用户名/邮箱登录** - 支持使用用户名或邮箱登录
 - **个人中心** - 用户资料、头像、图片管理
 - **访问控制** - 核心功能需登录访问
+
+### 🛡️ 安全特性
+- **暴力破解防护** - Cloudflare Turnstile 人机验证
+  - 登录失败 2 次后显示验证码
+  - 失败 10 次后锁定 15 分钟
+  - IP + 账户双重追踪
+- **速率限制** - 验证码发送限制（IP: 20/小时，邮箱: 1/分钟）
+- **邮件服务** - Resend.com API 集成，专业 HTML 邮件模板
 
 ### 🔍 强大搜索
 - **全文搜索** - 支持描述和标签的模糊搜索
@@ -89,14 +100,18 @@ wrangler kv:namespace create "CACHE"
 wrangler d1 execute imageaigo --remote --file=schema.sql
 
 # 5. 设置环境变量
-wrangler secret put ADMIN_PASSWORD
-wrangler secret put ADMIN_SECRET
+wrangler secret put ADMIN_PASSWORD        # 管理员密码
+wrangler secret put ADMIN_SECRET          # 管理员会话密钥
+wrangler secret put RESEND_API_TOKEN      # Resend 邮件服务 API Token
+wrangler secret put TURNSTILE_SECRET_KEY  # Cloudflare Turnstile 密钥
 
 # 6. 部署
 npm run deploy
 ```
 
 ### 配置说明
+
+#### 1. 更新资源 ID
 
 更新 `wrangler.toml` 中的资源 ID：
 
@@ -109,7 +124,30 @@ database_id = "YOUR_D1_DATABASE_ID"  # 替换为实际 ID
 [[kv_namespaces]]
 binding = "CACHE"
 id = "YOUR_KV_NAMESPACE_ID"  # 替换为实际 ID
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "imageaigo"
 ```
+
+#### 2. 配置 Turnstile（可选但推荐）
+
+1. 访问 [Cloudflare Turnstile](https://dash.cloudflare.com/?to=/:account/turnstile)
+2. 创建站点，获取 **Site Key** 和 **Secret Key**
+3. 更新 `src/user-pages.js` 中的站点密钥：
+   ```javascript
+   // 找到第 381 行，替换为你的 Site Key
+   sitekey: 'YOUR_SITE_KEY'
+   ```
+4. 配置密钥：`wrangler secret put TURNSTILE_SECRET_KEY`
+5. 验证配置：`./check-turnstile.sh`
+
+#### 3. 配置邮件服务（必需）
+
+1. 注册 [Resend](https://resend.com) 账号
+2. 获取 API Token
+3. 配置域名验证（可选，用于发送域名邮件）
+4. 配置密钥：`wrangler secret put RESEND_API_TOKEN`
 
 ## 📖 使用指南
 
