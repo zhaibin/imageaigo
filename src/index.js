@@ -10,10 +10,11 @@ import { buildFooter } from './footer-template';
 import { handleQueue } from './queue-handler';
 import { handleUnsplashSync } from './unsplash-sync';
 import { buildLoginPage, buildRegisterPage, buildForgotPasswordPage, buildResetPasswordPage } from './user-pages';
-import { registerUser, loginUser, logoutUser, requestPasswordReset, resetPassword, getUserInfo, verifySession, changePassword } from './auth';
+import { registerUser, loginUser, loginUserWithCode, logoutUser, requestPasswordReset, resetPassword, getUserInfo, verifySession, changePassword } from './auth';
 import { requireAuth, createResponseWithSession, createResponseWithoutSession, optionalAuth } from './auth-middleware';
 import { handleAdminUsers, handleAdminUserDetail, handleAdminUpdateUser, handleAdminDeleteUser } from './admin-users';
 import { buildProfilePage } from './profile-page';
+import { sendCode } from './verification-code.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -277,6 +278,11 @@ export default {
       }
 
       // User authentication API endpoints
+      // 发送验证码
+      if (path === '/api/auth/send-code' && request.method === 'POST') {
+        return await handleSendVerificationCode(request, env);
+      }
+
       if (path === '/api/auth/register' && request.method === 'POST') {
         return await handleUserRegister(request, env);
       }
@@ -2433,11 +2439,112 @@ export async function simpleSign(data, secret) {
 
 // ============= 用户认证 API 处理函数 =============
 
+// 发送验证码
+async function handleSendVerificationCode(request, env) {
+  try {
+    const { email, purpose, userId } = await request.json();
+    
+    // IP级别的速率限制（防止滥用）
+    if (env.CACHE) {
+      const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+      const ipRateLimitKey = `sendcode:${ip}`;
+      const ipCount = await env.CACHE.get(ipRateLimitKey);
+      
+      // 每个IP每小时最多发送20个验证码
+      if (ipCount && parseInt(ipCount) >= 20) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'Too many requests. Please try again later.' 
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '3600',
+            ...handleCORS().headers
+          }
+        });
+      }
+      
+      // 增加计数
+      const newCount = ipCount ? parseInt(ipCount) + 1 : 1;
+      await env.CACHE.put(ipRateLimitKey, newCount.toString(), { expirationTtl: 3600 });
+    }
+    
+    // 验证 purpose 参数
+    const validPurposes = ['register', 'login', 'reset_password', 'change_password'];
+    if (!validPurposes.includes(purpose)) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'Invalid verification code purpose' 
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...handleCORS().headers
+        }
+      });
+    }
+
+    // 如果是修改密码，需要验证登录状态
+    if (purpose === 'change_password') {
+      const auth = await requireAuth(request, env);
+      if (!auth.authorized) {
+        return auth.response;
+      }
+      // 使用当前登录用户的邮箱和ID
+      const userInfo = await getUserInfo(auth.user.id, env);
+      if (!userInfo.success) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'Failed to get user information' 
+        }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...handleCORS().headers
+          }
+        });
+      }
+      const result = await sendCode(userInfo.user.email, purpose, env, auth.user.id);
+      return new Response(JSON.stringify(result), {
+        status: result.success ? 200 : 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...handleCORS().headers
+        }
+      });
+    }
+
+    // 其他情况使用请求中的邮箱
+    const result = await sendCode(email, purpose, env, userId);
+    
+    return new Response(JSON.stringify(result), {
+      status: result.success ? 200 : 400,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  } catch (error) {
+    console.error('[API] Send verification code error:', error);
+    return new Response(JSON.stringify({ 
+      success: false, 
+      error: 'Failed to send verification code, please try again later' 
+    }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        ...handleCORS().headers
+      }
+    });
+  }
+}
+
 // 用户注册
 async function handleUserRegister(request, env) {
   try {
-    const { email, password, username } = await request.json();
-    const result = await registerUser(email, password, username, env);
+    const { email, password, username, verificationCode } = await request.json();
+    const result = await registerUser(email, password, username, verificationCode, env);
     
     return new Response(JSON.stringify(result), {
       status: result.success ? 200 : 400,
@@ -2461,11 +2568,32 @@ async function handleUserRegister(request, env) {
   }
 }
 
-// 用户登录
+// 用户登录（支持密码登录和验证码登录）
 async function handleUserLogin(request, env) {
   try {
-    const { email, password } = await request.json();
-    const result = await loginUser(email, password, env);
+    const { email, password, verificationCode } = await request.json();
+    
+    let result;
+    
+    // 如果提供了验证码，使用验证码登录
+    if (verificationCode) {
+      result = await loginUserWithCode(email, verificationCode, env);
+    } 
+    // 否则使用密码登录
+    else if (password) {
+      result = await loginUser(email, password, env);
+    } else {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: '请提供密码或验证码' 
+      }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          ...handleCORS().headers
+        }
+      });
+    }
     
     if (result.success) {
       // 设置 session cookie
@@ -2591,8 +2719,8 @@ async function handleUserForgotPassword(request, env) {
 // 重置密码
 async function handleUserResetPassword(request, env) {
   try {
-    const { resetToken, newPassword } = await request.json();
-    const result = await resetPassword(resetToken, newPassword, env);
+    const { email, verificationCode, newPassword } = await request.json();
+    const result = await resetPassword(email, verificationCode, newPassword, env);
     
     return new Response(JSON.stringify(result), {
       status: result.success ? 200 : 400,
@@ -2625,8 +2753,8 @@ async function handleUserChangePassword(request, env) {
       return auth.response;
     }
     
-    const { oldPassword, newPassword } = await request.json();
-    const result = await changePassword(auth.user.id, oldPassword, newPassword, env);
+    const { verificationCode, newPassword } = await request.json();
+    const result = await changePassword(auth.user.id, verificationCode, newPassword, env);
     
     return new Response(JSON.stringify(result), {
       status: result.success ? 200 : 400,

@@ -36,6 +36,19 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Verification codes table (for email verification)
+CREATE TABLE IF NOT EXISTS verification_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code TEXT NOT NULL,
+    purpose TEXT NOT NULL, -- register, login, reset_password, change_password
+    user_id INTEGER,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    used INTEGER DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Images table
 CREATE TABLE IF NOT EXISTS images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,4 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_users_random ON users(is_random);
 CREATE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(reset_token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_email ON verification_codes(email);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_purpose ON verification_codes(purpose);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_expires ON verification_codes(expires_at);
 
