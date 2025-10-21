@@ -2,6 +2,63 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.3.2] - 2025-10-21
+
+### 📚 Documentation Cleanup
+
+**重大文档整理** - 按照项目规范清理冗余文档
+
+#### 删除文档（10个）
+
+删除所有临时性和冗余的说明文档：
+
+- ❌ `TURNSTILE-FIX-CN.md` - 临时修复说明
+- ❌ `SITEKEY-UPDATE-COMPLETE.md` - 临时更新说明
+- ❌ `TURNSTILE-KEYS-CN.md` - 密钥配置说明
+- ❌ `TURNSTILE-TEST.md` - 测试说明
+- ❌ `TURNSTILE-SETUP.md` - 设置说明
+- ❌ `AUTH-SYSTEM.md` - 认证系统说明
+- ❌ `SETUP-GUIDE.md` - 设置指南
+- ❌ `TEST-API.md` - API 测试文档
+- ❌ `IMPLEMENTATION-COMPLETE.md` - 实现完成说明
+- ❌ `BRUTE-FORCE-PROTECTION.md` - 暴力破解防护说明
+
+**减少**: 2838 行冗余文档
+
+#### 更新 README.md
+
+整合所有重要信息到主文档：
+
+- ✅ **用户系统说明** - 双重登录、邮箱验证、会话管理
+- ✅ **安全特性说明** - Turnstile 防护、速率限制、邮件服务
+- ✅ **环境变量配置** - 完整的环境变量列表和说明
+- ✅ **Turnstile 配置指南** - Site Key 配置步骤
+- ✅ **Resend 邮件配置** - 邮件服务设置说明
+
+**新增**: 42 行集中的配置说明
+
+#### 保留文档
+
+**核心文档**（符合项目规范）:
+- ✅ `README.md` - 主文档，包含所有重要信息
+- ✅ `CHANGELOG.md` - 版本历史
+- ✅ `LICENSE` - MIT 许可证
+
+**工具脚本**（运维需要）:
+- ✅ `check-turnstile.sh` - Turnstile 配置检查
+- ✅ `update-sitekey.sh` - 站点密钥更新
+- ✅ `cleanup.sh` - 系统清理
+- ✅ 其他运维脚本
+
+#### 影响
+
+- 📖 **文档更清晰** - 只需查看 README 即可了解全部信息
+- 🎯 **维护更简单** - 减少重复内容，降低维护成本
+- ✅ **符合规范** - 遵循"仅保留核心文档"的项目规范
+- 📦 **仓库更精简** - 删除近 3000 行冗余内容
+
+---
+
 ## [v3.3.1] - 2025-10-21
 
 ### 🔧 Bug Fixes
