@@ -2,6 +2,115 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.5.2] - 2025-10-21
+
+### ⚡ Performance Optimization
+
+**优化推荐系统，避免潜在的 N+1 查询问题**
+
+#### N+1 查询检查
+
+对图片详情页的相似推荐列表进行了全面的 N+1 查询检查：
+
+**检查结果**: ✅ 当前实现无 N+1 问题
+
+**当前查询逻辑**:
+1. 查询图片 ID（1次）
+2. 查询源图片标签（1次）
+3. 查询候选图片+标签（1次，使用 `GROUP_CONCAT`）
+
+**总查询**: 3次（无论多少推荐图片）
+
+**对比 N+1 模式**:
+- ❌ N+1 模式：1 + N 次查询（例如 8 个推荐 = 9 次查询）
+- ✅ 当前实现：3 次查询
+- **效率提升**: 66.7%
+
+#### 实施的优化
+
+虽然当前无 N+1 问题，但发现了一个改进点：
+
+**问题**:
+- 查询时已获取标签数据（`GROUP_CONCAT tag_names`）
+- 但返回结果中未包含标签
+- 如果未来需要在推荐列表中显示标签，会造成 N+1 查询
+
+**解决方案**:
+- ✅ 推荐结果现在包含完整标签数据
+- ✅ 数据结构：`tags: { primary, subcategories, attributes }`
+- ✅ 无额外查询开销（数据已在主查询中）
+
+#### 优化详情
+
+**文件**: `src/services/ai/recommendations.js`
+
+**优化前**:
+```javascript
+return {
+  id, slug, image_url, description,
+  similarity, confidence,
+  matched_primary, matched_subcategory, matched_attribute
+};
+```
+
+**优化后**:
+```javascript
+return {
+  id, slug, image_url, description,
+  tags: {                    // ✨ 新增
+    primary: [...],           // 主分类标签
+    subcategories: [...],     // 子分类标签
+    attributes: [...]         // 属性标签
+  },
+  similarity, confidence,
+  matched_primary, matched_subcategory, matched_attribute
+};
+```
+
+#### 优势
+
+**性能**:
+- 🚀 无性能影响（标签数据已在主查询中）
+- ✅ 避免潜在的 N+1 问题
+- ✅ 查询次数保持不变（3次）
+
+**功能**:
+- 🔮 面向未来（支持显示推荐图片的标签）
+- 📦 数据更完整（推荐+标签）
+- ✨ 前端可以直接使用，无需额外请求
+
+**架构**:
+- ✅ 符合"一次查询包含所有数据"的最佳实践
+- ✅ 减少客户端和服务器之间的往返次数
+- ✅ 提升用户体验（数据立即可用）
+
+#### 缓存机制
+
+推荐系统的多层缓存：
+
+1. **KV 缓存** - 30 分钟
+   - Key: `recommendations:{imageSlug}`
+   - 命中率：预计 70%+
+
+2. **数据库查询优化**
+   - 使用 `GROUP_CONCAT` 批量获取
+   - 单次查询获取最多 100 个候选
+   - 在内存中计算相似度
+
+3. **前端缓存**
+   - 浏览器缓存 API 响应
+   - 减少重复请求
+
+#### 部署验证
+
+- ✅ 本地测试通过
+- ✅ 生产部署成功
+- ✅ Worker Version: `968fb213-a2ee-44ca-95f6-c8cf538b3356`
+- ✅ 推荐功能正常
+- ✅ 无性能回退
+
+---
+
 ## [v3.5.1] - 2025-10-21
 
 ### 🧹 Code Cleanup
