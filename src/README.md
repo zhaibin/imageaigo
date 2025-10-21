@@ -8,48 +8,50 @@
 src/
 ├── index.js                    # 🚀 主入口，路由处理
 │
-├── 认证模块 (5个文件)
-├── auth.js                     # 用户认证核心（注册、登录、密码管理）
-├── auth-middleware.js          # 认证中间件（会话验证、权限控制）
-├── verification-code.js        # 验证码管理（发送、验证、清理）
-├── brute-force-protection.js   # 暴力破解防护（Turnstile、失败追踪）
-└── email-service.js            # 邮件服务（Resend API 集成）
+├── auth/                       # ✅ 认证模块（5个文件）
+│   ├── auth.js                 # 用户认证核心（注册、登录、密码管理）
+│   ├── middleware.js           # 认证中间件（会话验证、权限控制）
+│   ├── verification.js         # 验证码管理（发送、验证、清理）
+│   ├── brute-force.js          # 暴力破解防护（Turnstile、失败追踪）
+│   └── email.js                # 邮件服务（Resend API 集成）
 │
-├── 页面模块 (6个文件)
-├── html-builder.js             # 首页构建（瀑布流、搜索、分类）
-├── user-pages.js               # 用户认证页面（登录、注册、密码重置）
-├── profile-page.js             # 个人中心（用户资料、图片管理）
-├── admin.js                    # 管理后台（仪表板、图片管理）
-├── admin-users.js              # 用户管理（查看、编辑、删除用户）
-└── pages.js                    # 页面路由和内容（关于、隐私、条款）
+├── pages/                      # ✅ 页面模块（6个文件）
+│   ├── admin/
+│   │   ├── index.js            # 管理后台（仪表板、图片管理）
+│   │   └── users.js            # 用户管理（查看、编辑、删除用户）
+│   ├── user/
+│   │   ├── auth-pages.js       # 用户认证页面（登录、注册、密码重置）
+│   │   └── profile.js          # 个人中心（用户资料、图片管理）
+│   ├── home.js                 # 首页构建（瀑布流、搜索、分类）
+│   └── ../pages.js             # 页面路由和内容（关于、隐私、条款）
 │
-├── 服务层 (5个文件)
-├── analyzer.js                 # AI 图片分析（Llama Vision、标签生成）
-├── recommendations.js          # 推荐系统（基于标签相似度）
-├── queue-handler.js            # 队列处理（批量上传、异步处理）
-├── unsplash-sync.js            # Unsplash 同步（定时任务）
-└── slug-generator.js           # URL 生成（SEO 友好的 slug）
+├── services/                   # ✅ 服务层（5个文件）
+│   ├── ai/
+│   │   ├── analyzer.js         # AI 图片分析（Llama Vision、标签生成）
+│   │   └── recommendations.js  # 推荐系统（基于标签相似度）
+│   ├── queue.js                # 队列处理（批量上传、异步处理）
+│   ├── unsplash.js             # Unsplash 同步（定时任务）
+│   └── slug.js                 # URL 生成（SEO 友好的 slug）
 │
-├── 模板系统 (4个文件)
-├── templates.js                # 模板函数（HTML 转义、格式化）
-├── footer-template.js          # 页脚模板（导航、链接）
-├── styles.js                   # CSS 样式（全局样式、响应式）
-└── templates/
-    └── layout.js               # 页面布局（通用HTML结构）
+├── templates/                  # ✅ 模板系统（4个文件）
+│   ├── index.js                # 模板函数（HTML 转义、格式化）
+│   ├── footer.js               # 页脚模板（导航、链接）
+│   ├── layout.js               # 页面布局（通用HTML结构）
+│   └── ../styles.js            # CSS 样式（全局样式、响应式）
 │
-├── 工具库 (3个文件)
-├── utils.js                    # 通用工具（CORS、哈希、缓存）
-└── lib/
-    ├── performance.js          # 性能优化（缓存策略、批量查询）
-    └── validation.js           # 数据验证（输入检查）
+├── lib/                        # ✅ 工具库（3个文件）
+│   ├── utils.js                # 通用工具（CORS、哈希、缓存）
+│   ├── performance.js          # 性能优化（缓存策略、批量查询）
+│   └── validation.js           # 数据验证（输入检查）
 │
-├── 客户端 (1个文件)
-└── client/
-    └── gallery.js              # 画廊客户端（瀑布流、懒加载）
+├── client/                     # 客户端（1个文件）
+│   └── gallery.js              # 画廊客户端（瀑布流、懒加载）
 │
-└── 组件 (1个文件)
-    └── components/
-        └── index.js            # 组件集合
+├── components/                 # 组件（1个文件）
+│   └── index.js                # 组件集合
+│
+├── pages.js                    # 页面内容
+└── styles.js                   # 全局样式
 ```
 
 ---
