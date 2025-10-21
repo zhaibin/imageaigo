@@ -191,29 +191,37 @@ export function buildLoginPage(message = '', error = '') {
       display: block;
     }
     .input-with-button {
+      position: relative;
       display: flex;
-      gap: 10px;
     }
     .input-with-button input {
       flex: 1;
+      padding-right: 110px !important;
     }
     .code-btn {
-      padding: 12px 20px;
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 8px 16px;
       background: #667eea;
       color: white;
       border: none;
-      border-radius: 8px;
-      font-size: 0.9rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
       cursor: pointer;
       white-space: nowrap;
       transition: all 0.3s;
     }
     .code-btn:hover {
       background: #5568d3;
+      transform: translateY(-50%) scale(1.02);
     }
     .code-btn:disabled {
       opacity: 0.6;
       cursor: not-allowed;
+      transform: translateY(-50%);
     }
   </style>
 </head>
@@ -266,7 +274,7 @@ export function buildLoginPage(message = '', error = '') {
         <div class="form-group">
           <label for="loginCode">Verification Code</label>
           <div class="input-with-button">
-            <input type="text" id="loginCode" name="code" required placeholder="Enter 6-digit code" maxlength="6">
+            <input type="text" id="loginCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
             <button type="button" class="code-btn" id="sendLoginCodeBtn">Get Code</button>
           </div>
         </div>
@@ -649,7 +657,7 @@ export function buildRegisterPage(message = '', error = '') {
           <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
           <button type="button" class="code-btn" id="sendCodeBtn">Get Code</button>
         </div>
-        <div class="hint">Check your email for the verification code</div>
+        <div class="hint">Click "Get Code" to receive the verification code in your email</div>
       </div>
       
       <div class="form-group">
@@ -1287,8 +1295,8 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
       
       <div class="form-group">
         <label for="verificationCode">Verification Code</label>
-        <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
-        <div class="hint">Check your email for the verification code</div>
+        <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code from your email" maxlength="6" pattern="[0-9]{6}">
+        <div class="hint">Enter the code you received in the forgot password email</div>
       </div>
       
       <div class="form-group">
