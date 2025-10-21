@@ -1,6 +1,66 @@
-# 更新日志
+# Changelog
 
-所有重要的项目更改都会记录在此文件中。
+All notable changes to this project will be documented in this file.
+
+## [v3.0.0] - 2025-10-21
+
+### 🔐 Email Verification Code Authentication System
+
+**Major Authentication Overhaul**
+
+#### Added
+- **Email Verification Code System** via Resend.com API
+  - 6-digit codes with 10-minute expiration
+  - Professional HTML email templates
+  - Support for: registration, login, password reset, password change
+  
+- **Dual Login Methods**
+  - Password login (traditional)
+  - Verification code login (new)
+  
+- **Username/Email Login**
+  - Login with username OR email address
+  - Works for both password and code-based login
+  
+- **Enhanced Username Validation**
+  - Format: 3-20 characters, alphanumeric + `_` `-`
+  - Must start with letter/number
+  - Regex: `/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/`
+
+#### Security Enhancements
+- IP-level rate limiting: 20 codes/hour
+- Email-level rate limiting: 1 code/minute
+- Failed attempts tracking: Lock after 5 failures
+- Automatic cleanup of expired codes
+- Single-use verification codes only
+
+#### Technical Changes
+- New: `src/email-service.js` - Resend integration
+- New: `src/verification-code.js` - Code management
+- Updated: `src/auth.js` - Username login support
+- Updated: `src/index.js` - New API endpoints
+- Updated: `schema.sql` - verification_codes table
+- Environment: Requires `RESEND_API_TOKEN`
+
+#### Documentation
+- `AUTH-SYSTEM.md` - System overview
+- `QUICK-START.md` - Setup guide
+- `TEST-API.md` - API testing examples
+- `IMPLEMENTATION-SUMMARY.md` - Technical details
+
+#### API Changes
+- New: `POST /api/auth/send-code` - Send verification code
+- Updated: `POST /api/auth/register` - Requires code
+- Updated: `POST /api/auth/login` - Supports username + code
+- Updated: `POST /api/auth/reset-password` - Uses code
+- Updated: `POST /api/auth/change-password` - Uses code
+
+#### Breaking Changes
+- Registration now requires email verification
+- Password reset uses codes instead of tokens
+- All error messages now in English
+
+---
 
 ## [v2.5.2] - 2025-10-21
 

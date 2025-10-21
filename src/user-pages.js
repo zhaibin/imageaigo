@@ -162,6 +162,59 @@ export function buildLoginPage(message = '', error = '') {
     }
     .loading .spinner { display: block; }
     .loading .btn-text { display: none; }
+    .login-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    .tab {
+      flex: 1;
+      padding: 12px;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      font-size: 1rem;
+      color: #666;
+      transition: all 0.3s;
+    }
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      font-weight: 600;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .input-with-button {
+      display: flex;
+      gap: 10px;
+    }
+    .input-with-button input {
+      flex: 1;
+    }
+    .code-btn {
+      padding: 12px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.3s;
+    }
+    .code-btn:hover {
+      background: #5568d3;
+    }
+    .code-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -177,22 +230,53 @@ export function buildLoginPage(message = '', error = '') {
     ${error ? `<div class="message error">${error}</div>` : ''}
     <div id="messageBox" style="display: none;"></div>
     
-    <form id="loginForm">
-      <div class="form-group">
-        <label for="email">Email Address</label>
-        <input type="email" id="email" name="email" required autocomplete="email">
-      </div>
-      
-      <div class="form-group">
-        <label for="password">Password</label>
-        <input type="password" id="password" name="password" required autocomplete="current-password">
-      </div>
-      
-      <button type="submit" class="btn" id="submitBtn">
-        <span class="btn-text">Login</span>
-        <div class="spinner"></div>
-      </button>
-    </form>
+    <div class="login-tabs">
+      <button class="tab active" data-tab="password">Password Login</button>
+      <button class="tab" data-tab="code">Code Login</button>
+    </div>
+    
+    <!-- Password Login -->
+    <div id="password-tab" class="tab-content active">
+      <form id="passwordLoginForm">
+        <div class="form-group">
+          <label for="email1">Email or Username</label>
+          <input type="text" id="email1" name="email" required autocomplete="username">
+        </div>
+        
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password">
+        </div>
+        
+        <button type="submit" class="btn" id="passwordSubmitBtn">
+          <span class="btn-text">Login</span>
+          <div class="spinner"></div>
+        </button>
+      </form>
+    </div>
+    
+    <!-- Code Login -->
+    <div id="code-tab" class="tab-content">
+      <form id="codeLoginForm">
+        <div class="form-group">
+          <label for="email2">Email or Username</label>
+          <input type="text" id="email2" name="email" required autocomplete="username">
+        </div>
+        
+        <div class="form-group">
+          <label for="loginCode">Verification Code</label>
+          <div class="input-with-button">
+            <input type="text" id="loginCode" name="code" required placeholder="Enter 6-digit code" maxlength="6">
+            <button type="button" class="code-btn" id="sendLoginCodeBtn">Get Code</button>
+          </div>
+        </div>
+        
+        <button type="submit" class="btn" id="codeSubmitBtn">
+          <span class="btn-text">Login</span>
+          <div class="spinner"></div>
+        </button>
+      </form>
+    </div>
     
     <div class="links">
       <a href="/register">Don't have an account? Sign up</a>
@@ -204,18 +288,37 @@ export function buildLoginPage(message = '', error = '') {
   </div>
 
   <script>
-    const form = document.getElementById('loginForm');
-    const submitBtn = document.getElementById('submitBtn');
     const messageBox = document.getElementById('messageBox');
     
-    form.addEventListener('submit', async (e) => {
+    // Tab switching
+    const tabs = document.querySelectorAll('.tab');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabName = tab.dataset.tab;
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        tabContents.forEach(content => content.classList.remove('active'));
+        document.getElementById(tabName + '-tab').classList.add('active');
+        
+        messageBox.style.display = 'none';
+      });
+    });
+    
+    // Password Login
+    const passwordForm = document.getElementById('passwordLoginForm');
+    const passwordSubmitBtn = document.getElementById('passwordSubmitBtn');
+    
+    passwordForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const email = document.getElementById('email').value;
+      const email = document.getElementById('email1').value;
       const password = document.getElementById('password').value;
       
-      submitBtn.disabled = true;
-      submitBtn.classList.add('loading');
+      passwordSubmitBtn.disabled = true;
+      passwordSubmitBtn.classList.add('loading');
       messageBox.style.display = 'none';
       
       try {
@@ -239,15 +342,115 @@ export function buildLoginPage(message = '', error = '') {
           messageBox.className = 'message error';
           messageBox.textContent = data.error || 'Login failed';
           messageBox.style.display = 'block';
-          submitBtn.disabled = false;
-          submitBtn.classList.remove('loading');
+          passwordSubmitBtn.disabled = false;
+          passwordSubmitBtn.classList.remove('loading');
         }
       } catch (error) {
         messageBox.className = 'message error';
         messageBox.textContent = 'Login failed. Please check your network connection';
         messageBox.style.display = 'block';
-        submitBtn.disabled = false;
-        submitBtn.classList.remove('loading');
+        passwordSubmitBtn.disabled = false;
+        passwordSubmitBtn.classList.remove('loading');
+      }
+    });
+    
+    // Code Login
+    const codeForm = document.getElementById('codeLoginForm');
+    const codeSubmitBtn = document.getElementById('codeSubmitBtn');
+    const sendLoginCodeBtn = document.getElementById('sendLoginCodeBtn');
+    let loginCountdown = 0;
+    
+    sendLoginCodeBtn.addEventListener('click', async () => {
+      const emailOrUsername = document.getElementById('email2').value;
+      
+      if (!emailOrUsername) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Please enter your email or username';
+        messageBox.style.display = 'block';
+        return;
+      }
+      
+      sendLoginCodeBtn.disabled = true;
+      
+      try {
+        const response = await fetch('/api/auth/send-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailOrUsername, purpose: 'login' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          messageBox.className = 'message success';
+          messageBox.textContent = data.message || 'Verification code sent!';
+          messageBox.style.display = 'block';
+          
+          loginCountdown = 60;
+          const timer = setInterval(() => {
+            if (loginCountdown > 0) {
+              sendLoginCodeBtn.textContent = loginCountdown + 's';
+              loginCountdown--;
+            } else {
+              clearInterval(timer);
+              sendLoginCodeBtn.textContent = 'Get Code';
+              sendLoginCodeBtn.disabled = false;
+            }
+          }, 1000);
+        } else {
+          messageBox.className = 'message error';
+          messageBox.textContent = data.error || 'Failed to send code';
+          messageBox.style.display = 'block';
+          sendLoginCodeBtn.disabled = false;
+        }
+      } catch (error) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Failed to send code';
+        messageBox.style.display = 'block';
+        sendLoginCodeBtn.disabled = false;
+      }
+    });
+    
+    codeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const emailOrUsername = document.getElementById('email2').value;
+      const verificationCode = document.getElementById('loginCode').value;
+      
+      codeSubmitBtn.disabled = true;
+      codeSubmitBtn.classList.add('loading');
+      messageBox.style.display = 'none';
+      
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailOrUsername, verificationCode })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          messageBox.className = 'message success';
+          messageBox.textContent = 'Login successful! Redirecting...';
+          messageBox.style.display = 'block';
+          
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1000);
+        } else {
+          messageBox.className = 'message error';
+          messageBox.textContent = data.error || 'Login failed';
+          messageBox.style.display = 'block';
+          codeSubmitBtn.disabled = false;
+          codeSubmitBtn.classList.remove('loading');
+        }
+      } catch (error) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Login failed';
+        messageBox.style.display = 'block';
+        codeSubmitBtn.disabled = false;
+        codeSubmitBtn.classList.remove('loading');
       }
     });
   </script>
@@ -436,14 +639,23 @@ export function buildRegisterPage(message = '', error = '') {
     
     <form id="registerForm">
       <div class="form-group">
-        <label for="username">Username</label>
-        <input type="text" id="username" name="username" required autocomplete="username">
-        <div class="hint">3-20 characters</div>
+        <label for="email">Email Address</label>
+        <input type="email" id="email" name="email" required autocomplete="email">
       </div>
       
       <div class="form-group">
-        <label for="email">Email Address</label>
-        <input type="email" id="email" name="email" required autocomplete="email">
+        <label for="verificationCode">Email Verification Code</label>
+        <div class="input-with-button">
+          <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
+          <button type="button" class="code-btn" id="sendCodeBtn">Get Code</button>
+        </div>
+        <div class="hint">Check your email for the verification code</div>
+      </div>
+      
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autocomplete="username">
+        <div class="hint">3-20 characters, letters, numbers, _ and - only</div>
       </div>
       
       <div class="form-group">
@@ -474,18 +686,91 @@ export function buildRegisterPage(message = '', error = '') {
     const form = document.getElementById('registerForm');
     const submitBtn = document.getElementById('submitBtn');
     const messageBox = document.getElementById('messageBox');
+    const sendCodeBtn = document.getElementById('sendCodeBtn');
+    let countdown = 0;
     
+    // Send verification code
+    sendCodeBtn.addEventListener('click', async () => {
+      const email = document.getElementById('email').value;
+      
+      if (!email) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Please enter your email address first';
+        messageBox.style.display = 'block';
+        return;
+      }
+      
+      // Email format validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Please enter a valid email address';
+        messageBox.style.display = 'block';
+        return;
+      }
+      
+      sendCodeBtn.disabled = true;
+      
+      try {
+        const response = await fetch('/api/auth/send-code', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, purpose: 'register' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          messageBox.className = 'message success';
+          messageBox.textContent = data.message || 'Verification code sent to your email!';
+          messageBox.style.display = 'block';
+          
+          // Start countdown (60 seconds)
+          countdown = 60;
+          const timer = setInterval(() => {
+            if (countdown > 0) {
+              sendCodeBtn.textContent = countdown + 's';
+              countdown--;
+            } else {
+              clearInterval(timer);
+              sendCodeBtn.textContent = 'Get Code';
+              sendCodeBtn.disabled = false;
+            }
+          }, 1000);
+        } else {
+          messageBox.className = 'message error';
+          messageBox.textContent = data.error || 'Failed to send code';
+          messageBox.style.display = 'block';
+          sendCodeBtn.disabled = false;
+        }
+      } catch (error) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Failed to send code. Please check your network connection';
+        messageBox.style.display = 'block';
+        sendCodeBtn.disabled = false;
+      }
+    });
+    
+    // Form submission
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const username = document.getElementById('username').value;
       const email = document.getElementById('email').value;
+      const verificationCode = document.getElementById('verificationCode').value;
+      const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
       const confirmPassword = document.getElementById('confirmPassword').value;
       
       if (password !== confirmPassword) {
         messageBox.className = 'message error';
         messageBox.textContent = 'Passwords do not match';
+        messageBox.style.display = 'block';
+        return;
+      }
+      
+      if (!verificationCode || verificationCode.length !== 6) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Please enter a valid 6-digit verification code';
         messageBox.style.display = 'block';
         return;
       }
@@ -498,7 +783,7 @@ export function buildRegisterPage(message = '', error = '') {
         const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, email, password })
+          body: JSON.stringify({ email, username, password, verificationCode })
         });
         
         const data = await response.json();
@@ -723,7 +1008,7 @@ export function buildForgotPasswordPage(message = '', error = '') {
     </div>
     
     <h2>Forgot Password</h2>
-    <p class="description">Enter your email address and we'll send you a password reset link.</p>
+    <p class="description">Enter your email address and we'll send you a verification code to reset your password.</p>
     
     ${message ? `<div class="message success">${message}</div>` : ''}
     ${error ? `<div class="message error">${error}</div>` : ''}
@@ -736,15 +1021,14 @@ export function buildForgotPasswordPage(message = '', error = '') {
       </div>
       
       <button type="submit" class="btn" id="submitBtn">
-        <span class="btn-text">Send Reset Link</span>
+        <span class="btn-text">Send Verification Code</span>
         <div class="spinner"></div>
       </button>
     </form>
     
-    <div id="tokenSection" class="token-section">
-      <p><strong>Development Note:</strong> Since email functionality is not configured, please use the following token to reset your password:</p>
-      <div class="token-code" id="tokenCode"></div>
-      <a href="#" id="resetLink" class="btn" style="display: inline-block; text-decoration: none; text-align: center;">Go to Reset Password</a>
+    <div id="nextStepSection" class="token-section">
+      <p><strong>Code sent!</strong> Please check your email and then:</p>
+      <a href="/reset-password" class="btn" style="display: inline-block; text-decoration: none; text-align: center;">Go to Reset Password</a>
     </div>
     
     <div class="links">
@@ -760,9 +1044,7 @@ export function buildForgotPasswordPage(message = '', error = '') {
     const form = document.getElementById('forgotForm');
     const submitBtn = document.getElementById('submitBtn');
     const messageBox = document.getElementById('messageBox');
-    const tokenSection = document.getElementById('tokenSection');
-    const tokenCode = document.getElementById('tokenCode');
-    const resetLink = document.getElementById('resetLink');
+    const nextStepSection = document.getElementById('nextStepSection');
     
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -772,7 +1054,7 @@ export function buildForgotPasswordPage(message = '', error = '') {
       submitBtn.disabled = true;
       submitBtn.classList.add('loading');
       messageBox.style.display = 'none';
-      tokenSection.classList.remove('show');
+      nextStepSection.classList.remove('show');
       
       try {
         const response = await fetch('/api/auth/forgot-password', {
@@ -788,12 +1070,8 @@ export function buildForgotPasswordPage(message = '', error = '') {
           messageBox.textContent = data.message;
           messageBox.style.display = 'block';
           
-          // Show token in development environment
-          if (data.resetToken) {
-            tokenCode.textContent = data.resetToken;
-            resetLink.href = '/reset-password?token=' + data.resetToken;
-            tokenSection.classList.add('show');
-          }
+          // Show next step
+          nextStepSection.classList.add('show');
           
           submitBtn.disabled = false;
           submitBtn.classList.remove('loading');
@@ -995,14 +1273,23 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
     </div>
     
     <h2>Reset Password</h2>
-    <p class="description">Enter your new password below.</p>
+    <p class="description">Enter the verification code from your email and your new password.</p>
     
     ${message ? `<div class="message success">${message}</div>` : ''}
     ${error ? `<div class="message error">${error}</div>` : ''}
     <div id="messageBox" style="display: none;"></div>
     
     <form id="resetForm">
-      <input type="hidden" id="resetToken" value="${token}">
+      <div class="form-group">
+        <label for="email">Email Address</label>
+        <input type="email" id="email" name="email" required autocomplete="email">
+      </div>
+      
+      <div class="form-group">
+        <label for="verificationCode">Verification Code</label>
+        <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
+        <div class="hint">Check your email for the verification code</div>
+      </div>
       
       <div class="form-group">
         <label for="password">New Password</label>
@@ -1033,30 +1320,24 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
     const submitBtn = document.getElementById('submitBtn');
     const messageBox = document.getElementById('messageBox');
     
-    // Get token from URL if not passed by server
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlToken = urlParams.get('token');
-    if (urlToken && !document.getElementById('resetToken').value) {
-      document.getElementById('resetToken').value = urlToken;
-    }
-    
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const resetToken = document.getElementById('resetToken').value;
+      const email = document.getElementById('email').value;
+      const verificationCode = document.getElementById('verificationCode').value;
       const password = document.getElementById('password').value;
       const confirmPassword = document.getElementById('confirmPassword').value;
-      
-      if (!resetToken) {
-        messageBox.className = 'message error';
-        messageBox.textContent = 'Invalid reset token';
-        messageBox.style.display = 'block';
-        return;
-      }
       
       if (password !== confirmPassword) {
         messageBox.className = 'message error';
         messageBox.textContent = 'Passwords do not match';
+        messageBox.style.display = 'block';
+        return;
+      }
+      
+      if (!verificationCode || verificationCode.length !== 6) {
+        messageBox.className = 'message error';
+        messageBox.textContent = 'Please enter a valid 6-digit verification code';
         messageBox.style.display = 'block';
         return;
       }
@@ -1069,7 +1350,7 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
         const response = await fetch('/api/auth/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ resetToken, newPassword: password })
+          body: JSON.stringify({ email, verificationCode, newPassword: password })
         });
         
         const data = await response.json();
