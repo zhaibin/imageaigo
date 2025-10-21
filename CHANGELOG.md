@@ -2,6 +2,84 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v3.4.0] - 2025-10-21
+
+### 🔧 Scripts Refactoring
+
+**运维脚本整合优化** - 从 9 个脚本整合为 4 个功能完善的管理工具
+
+#### 新增整合脚本（4个）
+
+**1. admin-setup.sh - 管理员设置**
+- ✅ 初始设置向导（setup）
+- ✅ 修改密码/密钥（change）
+- ✅ 检查配置状态（check）
+- ✅ 支持所有环境变量配置（ADMIN_PASSWORD, ADMIN_SECRET, RESEND_API_TOKEN, TURNSTILE_SECRET_KEY）
+- ✅ 交互式菜单和命令行模式
+
+**2. turnstile.sh - Turnstile 管理**
+- ✅ 检查配置状态（check）
+- ✅ 更新站点密钥（update）
+- ✅ 测试验证功能（test）
+- ✅ 配置向导（setup）
+- ✅ 完整的 5 项配置检查
+
+**3. cleanup.sh - 系统清理**
+- ✅ 清理所有数据（all）
+- ✅ 清理 R2 存储（r2）
+- ✅ 清理 KV 缓存（kv）
+- ✅ 清理 Sitemap 缓存（sitemap）
+- ✅ 系统状态检查（status）
+
+**4. test-seo.sh - SEO 测试**
+- ✅ 测试 Sitemap（sitemap）
+- ✅ 测试结构化数据（schema）
+- ✅ 测试元数据（meta）
+- ✅ 运行所有测试（all）
+- ✅ 支持自定义 URL 测试
+
+#### 删除旧脚本（8个）
+
+整合前的脚本：
+
+- ❌ `change-admin-password.sh` (104行) → 整合到 `admin-setup.sh`
+- ❌ `setup-admin.sh` (73行) → 整合到 `admin-setup.sh`
+- ❌ `check-turnstile.sh` (118行) → 整合到 `turnstile.sh`
+- ❌ `update-sitekey.sh` (40行) → 整合到 `turnstile.sh`
+- ❌ `clear-sitemap-cache.sh` (42行) → 整合到 `cleanup.sh`
+- ❌ `test-sitemap.sh` (46行) → 整合到 `test-seo.sh`
+- ❌ `test-structured-data.sh` (69行) → 整合到 `test-seo.sh`
+- ❌ `migrate-user-auth.sh` (116行) → 一次性迁移脚本，已完成
+
+#### 优化内容
+
+**功能整合**:
+- 从 9 个独立脚本整合为 4 个功能模块
+- 每个模块支持多种操作模式
+- 统一的命令行接口（子命令 + 交互式菜单）
+
+**代码质量**:
+- 彩色输出（绿色成功、黄色警告、红色错误）
+- 完善的错误处理和状态检查
+- 清晰的帮助信息和使用示例
+- 安全确认（危险操作需要二次确认）
+
+**用户体验**:
+- 支持命令行参数和交互式菜单两种模式
+- 每个脚本都有 `--help` 选项
+- 操作结果清晰反馈
+- 提供下一步操作建议
+
+#### 影响
+
+- 📁 **脚本数量**: 减少 5 个（9 → 4）
+- 📝 **代码行数**: 净增 548 行（功能更完善）
+- 🎯 **易用性**: 命令更统一，功能更集中
+- 🔧 **维护性**: 相关功能整合，更易维护
+- ✨ **功能性**: 增加状态检查、向导模式等
+
+---
+
 ## [v3.3.2] - 2025-10-21
 
 ### 📚 Documentation Cleanup
