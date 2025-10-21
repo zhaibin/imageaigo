@@ -90,7 +90,9 @@ export function buildLoginPage(message = '', error = '') {
       font-size: 0.95rem;
     }
     input[type="email"],
-    input[type="password"] {
+    input[type="password"],
+    input[type="text"],
+    .normal-input {
       width: 100%;
       padding: 12px 15px;
       border: 2px solid #e0e0e0;
@@ -99,7 +101,9 @@ export function buildLoginPage(message = '', error = '') {
       transition: all 0.3s;
     }
     input[type="email"]:focus,
-    input[type="password"]:focus {
+    input[type="password"]:focus,
+    input[type="text"]:focus,
+    .normal-input:focus {
       outline: none;
       border-color: #667eea;
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
@@ -248,12 +252,12 @@ export function buildLoginPage(message = '', error = '') {
       <form id="passwordLoginForm">
         <div class="form-group">
           <label for="email1">Email or Username</label>
-          <input type="text" id="email1" name="email" required autocomplete="username">
+          <input type="text" id="email1" name="email" required autocomplete="username" class="normal-input">
         </div>
         
         <div class="form-group">
           <label for="password">Password</label>
-          <input type="password" id="password" name="password" required autocomplete="current-password">
+          <input type="password" id="password" name="password" required autocomplete="current-password" class="normal-input">
         </div>
         
         <button type="submit" class="btn" id="passwordSubmitBtn">
@@ -268,13 +272,13 @@ export function buildLoginPage(message = '', error = '') {
       <form id="codeLoginForm">
         <div class="form-group">
           <label for="email2">Email or Username</label>
-          <input type="text" id="email2" name="email" required autocomplete="username">
+          <input type="text" id="email2" name="email" required autocomplete="username" class="normal-input">
         </div>
         
         <div class="form-group">
           <label for="loginCode">Verification Code</label>
           <div class="input-with-button">
-            <input type="text" id="loginCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
+            <input type="text" id="loginCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" class="code-input">
             <button type="button" class="code-btn" id="sendLoginCodeBtn">Get Code</button>
           </div>
         </div>
@@ -632,11 +636,21 @@ export function buildRegisterPage(message = '', error = '') {
     .loading .btn-text { display: none; }
     .input-with-button {
       position: relative;
-      display: flex;
+      display: block;
     }
-    .input-with-button input {
-      flex: 1;
+    .input-with-button .code-input {
+      width: 100%;
+      padding: 12px 15px;
       padding-right: 110px !important;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: all 0.3s;
+    }
+    .input-with-button .code-input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
     }
     .code-btn {
       position: absolute;
@@ -687,7 +701,7 @@ export function buildRegisterPage(message = '', error = '') {
       <div class="form-group">
         <label for="verificationCode">Email Verification Code</label>
         <div class="input-with-button">
-          <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}">
+          <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code" maxlength="6" pattern="[0-9]{6}" class="code-input">
           <button type="button" class="code-btn" id="sendCodeBtn">Get Code</button>
         </div>
         <div class="hint">Click "Get Code" to receive the verification code in your email</div>
@@ -1020,58 +1034,6 @@ export function buildForgotPasswordPage(message = '', error = '') {
     }
     .loading .spinner { display: block; }
     .loading .btn-text { display: none; }
-    .input-with-button {
-      position: relative;
-      display: flex;
-    }
-    .input-with-button input {
-      flex: 1;
-      padding-right: 110px !important;
-    }
-    .code-btn {
-      position: absolute;
-      right: 4px;
-      top: 50%;
-      transform: translateY(-50%);
-      padding: 8px 16px;
-      background: #667eea;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.3s;
-    }
-    .code-btn:hover {
-      background: #5568d3;
-      transform: translateY(-50%) scale(1.02);
-    }
-    .code-btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: translateY(-50%);
-    }
-    .token-section {
-      display: none;
-      margin-top: 20px;
-      padding: 15px;
-      background: #f8f9fa;
-      border-radius: 8px;
-    }
-    .token-section.show {
-      display: block;
-    }
-    .token-code {
-      font-family: monospace;
-      background: white;
-      padding: 10px;
-      border-radius: 4px;
-      word-break: break-all;
-      margin: 10px 0;
-      border: 1px solid #ddd;
-    }
   </style>
 </head>
 <body>
@@ -1082,7 +1044,7 @@ export function buildForgotPasswordPage(message = '', error = '') {
     </div>
     
     <h2>Forgot Password</h2>
-    <p class="description">Enter your email address and we'll send you a verification code to reset your password.</p>
+    <p class="description">Enter your email address and we'll send you a password reset link.</p>
     
     ${message ? `<div class="message success">${message}</div>` : ''}
     ${error ? `<div class="message error">${error}</div>` : ''}
@@ -1095,15 +1057,10 @@ export function buildForgotPasswordPage(message = '', error = '') {
       </div>
       
       <button type="submit" class="btn" id="submitBtn">
-        <span class="btn-text">Send Verification Code</span>
+        <span class="btn-text">Send Reset Link</span>
         <div class="spinner"></div>
       </button>
     </form>
-    
-    <div id="nextStepSection" class="token-section">
-      <p><strong>Code sent!</strong> Please check your email and then:</p>
-      <a href="/reset-password" class="btn" style="display: inline-block; text-decoration: none; text-align: center;">Go to Reset Password</a>
-    </div>
     
     <div class="links">
       <a href="/login">Back to Login</a>
@@ -1128,7 +1085,6 @@ export function buildForgotPasswordPage(message = '', error = '') {
       submitBtn.disabled = true;
       submitBtn.classList.add('loading');
       messageBox.style.display = 'none';
-      nextStepSection.classList.remove('show');
       
       try {
         const response = await fetch('/api/auth/forgot-password', {
@@ -1141,11 +1097,8 @@ export function buildForgotPasswordPage(message = '', error = '') {
         
         if (data.success) {
           messageBox.className = 'message success';
-          messageBox.textContent = data.message;
+          messageBox.textContent = data.message + ' Please check your email and click the reset link.';
           messageBox.style.display = 'block';
-          
-          // Show next step
-          nextStepSection.classList.add('show');
           
           submitBtn.disabled = false;
           submitBtn.classList.remove('loading');
@@ -1347,23 +1300,14 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
     </div>
     
     <h2>Reset Password</h2>
-    <p class="description">Enter the verification code from your email and your new password.</p>
+    <p class="description">Enter your new password below.</p>
     
     ${message ? `<div class="message success">${message}</div>` : ''}
     ${error ? `<div class="message error">${error}</div>` : ''}
     <div id="messageBox" style="display: none;"></div>
     
     <form id="resetForm">
-      <div class="form-group">
-        <label for="email">Email Address</label>
-        <input type="email" id="email" name="email" required autocomplete="email">
-      </div>
-      
-      <div class="form-group">
-        <label for="verificationCode">Verification Code</label>
-        <input type="text" id="verificationCode" name="code" required placeholder="Enter 6-digit code from your email" maxlength="6" pattern="[0-9]{6}">
-        <div class="hint">Enter the code you received in the forgot password email</div>
-      </div>
+      <input type="hidden" id="resetToken" value="${token}">
       
       <div class="form-group">
         <label for="password">New Password</label>
@@ -1394,24 +1338,30 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
     const submitBtn = document.getElementById('submitBtn');
     const messageBox = document.getElementById('messageBox');
     
+    // Get token from URL if not passed by server
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    if (urlToken && !document.getElementById('resetToken').value) {
+      document.getElementById('resetToken').value = urlToken;
+    }
+    
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const email = document.getElementById('email').value;
-      const verificationCode = document.getElementById('verificationCode').value;
+      const resetToken = document.getElementById('resetToken').value;
       const password = document.getElementById('password').value;
       const confirmPassword = document.getElementById('confirmPassword').value;
       
-      if (password !== confirmPassword) {
+      if (!resetToken) {
         messageBox.className = 'message error';
-        messageBox.textContent = 'Passwords do not match';
+        messageBox.textContent = 'Invalid reset token. Please request a new password reset.';
         messageBox.style.display = 'block';
         return;
       }
       
-      if (!verificationCode || verificationCode.length !== 6) {
+      if (password !== confirmPassword) {
         messageBox.className = 'message error';
-        messageBox.textContent = 'Please enter a valid 6-digit verification code';
+        messageBox.textContent = 'Passwords do not match';
         messageBox.style.display = 'block';
         return;
       }
@@ -1424,7 +1374,7 @@ export function buildResetPasswordPage(token = '', message = '', error = '') {
         const response = await fetch('/api/auth/reset-password', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, verificationCode, newPassword: password })
+          body: JSON.stringify({ resetToken, newPassword: password })
         });
         
         const data = await response.json();

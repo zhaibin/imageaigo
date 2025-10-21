@@ -242,6 +242,100 @@ function getEmailContent(code, purpose) {
 }
 
 /**
+ * 发送密码重置邮件
+ */
+export async function sendPasswordResetEmail(email, resetLink, env) {
+  try {
+    const apiKey = env.RESEND_API_TOKEN;
+    if (!apiKey) {
+      console.error('[Email] RESEND_API_TOKEN not configured');
+      return { success: false, error: 'Email service not configured' };
+    }
+
+    const requestBody = {
+      from: 'ImageAI Go <noreply@mail.imageaigo.cc>',
+      to: [email],
+      subject: 'ImageAI Go - Password Reset',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: linear-gradient(135deg, #f59e0b 0%, #dc2626 100%); color: white; padding: 30px 20px; border-radius: 10px 10px 0 0; text-align: center; }
+            .content { background: #f9fafb; padding: 30px 20px; border-radius: 0 0 10px 10px; }
+            .button-box { text-align: center; margin: 30px 0; }
+            .reset-button { display: inline-block; padding: 15px 40px; background: linear-gradient(135deg, #f59e0b 0%, #dc2626 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; }
+            .footer { text-align: center; margin-top: 20px; color: #6b7280; font-size: 14px; }
+            .warning { color: #dc2626; margin-top: 20px; font-size: 14px; }
+            .link-text { background: #f3f4f6; padding: 10px; border-radius: 6px; word-break: break-all; font-size: 12px; color: #666; margin-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Password Reset Request</h1>
+            </div>
+            <div class="content">
+              <p>Hello,</p>
+              <p>You have requested to reset your password for your ImageAI Go account.</p>
+              <p>Click the button below to reset your password:</p>
+              <div class="button-box">
+                <a href="${resetLink}" class="reset-button">Reset My Password</a>
+              </div>
+              <p>Or copy and paste this link in your browser:</p>
+              <div class="link-text">${resetLink}</div>
+              <p>This link will expire in <strong>1 hour</strong>.</p>
+              <p class="warning">⚠️ If you did not request this password reset, please ignore this email or contact us if you have concerns about your account security.</p>
+              <div class="footer">
+                <p>This is an automated email. Please do not reply.</p>
+                <p>© 2025 ImageAI Go. All rights reserved.</p>
+              </div>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `Password Reset Request\n\nYou have requested to reset your password for your ImageAI Go account.\n\nClick the link below to reset your password:\n${resetLink}\n\nThis link will expire in 1 hour.\n\nIf you did not request this, please ignore this email.\n\n© 2025 ImageAI Go`
+    };
+
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error('[Email] Resend API error:', result);
+      return { 
+        success: false, 
+        error: 'Failed to send email: ' + (result.message || response.statusText) 
+      };
+    }
+
+    console.log('[Email] Password reset email sent:', result.id);
+    return { 
+      success: true, 
+      messageId: result.id 
+    };
+
+  } catch (error) {
+    console.error('[Email] Send error:', error);
+    return { 
+      success: false, 
+      error: 'Failed to send email: ' + error.message 
+    };
+  }
+}
+
+/**
  * 发送测试邮件
  */
 export async function sendTestEmail(email, env) {

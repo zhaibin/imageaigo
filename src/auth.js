@@ -331,7 +331,7 @@ export async function logoutUser(sessionToken, env) {
 }
 
 /**
- * 请求密码重置（发送验证码）
+ * 请求密码重置（发送重置链接到邮箱）
  */
 export async function requestPasswordReset(email, env) {
   try {
@@ -352,20 +352,30 @@ export async function requestPasswordReset(email, env) {
     if (!user) {
       return { 
         success: true, 
-        message: 'If this email is registered, you will receive a verification code'
+        message: 'If this email is registered, you will receive a password reset link'
       };
     }
 
-    // 发送验证码
-    const result = await sendCode(email, 'reset_password', env, user.id);
+    // 生成重置 token
+    const resetToken = generateToken(48);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 小时
+
+    // 保存重置 token
+    await env.DB.prepare(
+      'INSERT INTO password_resets (user_id, reset_token, expires_at) VALUES (?, ?, ?)'
+    ).bind(user.id, resetToken, expiresAt.toISOString()).run();
+
+    // 发送重置邮件
+    const resetLink = `https://imageaigo.cc/reset-password?token=${resetToken}`;
+    const emailResult = await sendPasswordResetEmail(email, resetLink, env);
     
-    if (!result.success) {
-      return result;
+    if (!emailResult.success) {
+      return emailResult;
     }
 
-    return{
+    return {
       success: true,
-      message: 'Verification code sent to your email'
+      message: 'Password reset link sent to your email'
     };
 
   } catch (error) {
@@ -375,11 +385,11 @@ export async function requestPasswordReset(email, env) {
 }
 
 /**
- * 重置密码（使用验证码）
+ * 重置密码（使用重置链接 token）
  */
-export async function resetPassword(email, verificationCode, newPassword, env) {
+export async function resetPassword(resetToken, newPassword, env) {
   try {
-    if (!email || !verificationCode || !newPassword) {
+    if (!resetToken || !newPassword) {
       return { success: false, error: 'Please provide all required information' };
     }
 
@@ -387,19 +397,26 @@ export async function resetPassword(email, verificationCode, newPassword, env) {
       return { success: false, error: 'Password must be at least 8 characters with letters and numbers' };
     }
 
-    // 验证验证码
-    const codeVerification = await verifyCode(email, verificationCode, 'reset_password', env);
-    if (!codeVerification.valid) {
-      return { success: false, error: codeVerification.error };
+    // 查找重置请求
+    const resetRequest = await env.DB.prepare(`
+      SELECT id, user_id, expires_at, used
+      FROM password_resets
+      WHERE reset_token = ?
+    `).bind(resetToken).first();
+
+    if (!resetRequest) {
+      return { success: false, error: 'Invalid reset link' };
     }
 
-    // 查找用户
-    const user = await env.DB.prepare(
-      'SELECT id FROM users WHERE email = ?'
-    ).bind(email).first();
+    // 检查是否已使用
+    if (resetRequest.used) {
+      return { success: false, error: 'This reset link has already been used' };
+    }
 
-    if (!user) {
-      return { success: false, error: 'User not found' };
+    // 检查是否过期
+    const expiresAt = new Date(resetRequest.expires_at);
+    if (expiresAt < new Date()) {
+      return { success: false, error: 'Reset link expired, please request a new one' };
     }
 
     // 哈希新密码
@@ -408,12 +425,17 @@ export async function resetPassword(email, verificationCode, newPassword, env) {
     // 更新密码
     await env.DB.prepare(
       'UPDATE users SET password_hash = ? WHERE id = ?'
-    ).bind(passwordHash, user.id).run();
+    ).bind(passwordHash, resetRequest.user_id).run();
+
+    // 标记 token 已使用
+    await env.DB.prepare(
+      'UPDATE password_resets SET used = 1 WHERE id = ?'
+    ).bind(resetRequest.id).run();
 
     // 删除该用户的所有 session（强制重新登录）
     await env.DB.prepare(
       'DELETE FROM user_sessions WHERE user_id = ?'
-    ).bind(user.id).run();
+    ).bind(resetRequest.user_id).run();
 
     return {
       success: true,

@@ -15,6 +15,7 @@ import { requireAuth, createResponseWithSession, createResponseWithoutSession, o
 import { handleAdminUsers, handleAdminUserDetail, handleAdminUpdateUser, handleAdminDeleteUser } from './admin-users';
 import { buildProfilePage } from './profile-page';
 import { sendCode } from './verification-code.js';
+import { sendPasswordResetEmail } from './email-service.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -2719,8 +2720,8 @@ async function handleUserForgotPassword(request, env) {
 // 重置密码
 async function handleUserResetPassword(request, env) {
   try {
-    const { email, verificationCode, newPassword } = await request.json();
-    const result = await resetPassword(email, verificationCode, newPassword, env);
+    const { resetToken, newPassword } = await request.json();
+    const result = await resetPassword(resetToken, newPassword, env);
     
     return new Response(JSON.stringify(result), {
       status: result.success ? 200 : 400,
@@ -2733,7 +2734,7 @@ async function handleUserResetPassword(request, env) {
     console.error('[API] Reset password error:', error);
     return new Response(JSON.stringify({ 
       success: false, 
-      error: '重置失败，请稍后重试' 
+      error: 'Reset failed, please try again later' 
     }), {
       status: 500,
       headers: {
