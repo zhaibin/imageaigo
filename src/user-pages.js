@@ -630,6 +630,39 @@ export function buildRegisterPage(message = '', error = '') {
     }
     .loading .spinner { display: block; }
     .loading .btn-text { display: none; }
+    .input-with-button {
+      position: relative;
+      display: flex;
+    }
+    .input-with-button input {
+      flex: 1;
+      padding-right: 110px !important;
+    }
+    .code-btn {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 8px 16px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.3s;
+    }
+    .code-btn:hover {
+      background: #5568d3;
+      transform: translateY(-50%) scale(1.02);
+    }
+    .code-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: translateY(-50%);
+    }
   </style>
 </head>
 <body>
@@ -987,6 +1020,39 @@ export function buildForgotPasswordPage(message = '', error = '') {
     }
     .loading .spinner { display: block; }
     .loading .btn-text { display: none; }
+    .input-with-button {
+      position: relative;
+      display: flex;
+    }
+    .input-with-button input {
+      flex: 1;
+      padding-right: 110px !important;
+    }
+    .code-btn {
+      position: absolute;
+      right: 4px;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 8px 16px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.3s;
+    }
+    .code-btn:hover {
+      background: #5568d3;
+      transform: translateY(-50%) scale(1.02);
+    }
+    .code-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: translateY(-50%);
+    }
     .token-section {
       display: none;
       margin-top: 20px;
