@@ -282,7 +282,7 @@ export function buildLoginPage(message = '', error = '') {
         <!-- Turnstile CAPTCHA (shown after 2 failed attempts) -->
         <div class="turnstile-container" id="turnstileContainer1">
           <div class="turnstile-title">🛡️ Human Verification Required</div>
-          <div class="cf-turnstile" data-sitekey="0x4AAAAAAAzX8PJx0lF_CDHO" data-theme="light" id="turnstile1"></div>
+          <div id="turnstile1"></div>
         </div>
         
         <button type="submit" class="btn" id="passwordSubmitBtn">
@@ -311,7 +311,7 @@ export function buildLoginPage(message = '', error = '') {
         <!-- Turnstile CAPTCHA (shown after 2 failed attempts) -->
         <div class="turnstile-container" id="turnstileContainer2">
           <div class="turnstile-title">🛡️ Human Verification Required</div>
-          <div class="cf-turnstile" data-sitekey="0x4AAAAAAAzX8PJx0lF_CDHO" data-theme="light" id="turnstile2"></div>
+          <div id="turnstile2"></div>
         </div>
         
         <button type="submit" class="btn" id="codeSubmitBtn">
@@ -334,6 +334,8 @@ export function buildLoginPage(message = '', error = '') {
     const messageBox = document.getElementById('messageBox');
     let passwordFailCount = 0;
     let codeFailCount = 0;
+    let turnstileWidget1 = null;
+    let turnstileWidget2 = null;
     
     // Tab switching
     const tabs = document.querySelectorAll('.tab');
@@ -351,6 +353,42 @@ export function buildLoginPage(message = '', error = '') {
         messageBox.style.display = 'none';
       });
     });
+    
+    // 显示并渲染 Turnstile widget
+    function showTurnstile(widgetId, containerId) {
+      const container = document.getElementById(containerId);
+      if (!container) return null;
+      
+      container.classList.add('show');
+      
+      // 如果已经渲染过，重置即可
+      if (widgetId) {
+        if (window.turnstile) {
+          try {
+            turnstile.reset(widgetId);
+          } catch (e) {
+            console.log('Turnstile reset failed:', e);
+          }
+        }
+        return widgetId;
+      }
+      
+      // 首次渲染
+      if (window.turnstile) {
+        try {
+          const elementId = containerId === 'turnstileContainer1' ? 'turnstile1' : 'turnstile2';
+          const newWidgetId = turnstile.render('#' + elementId, {
+            sitekey: '0x4AAAAAAAzX8PJx0lF_CDHO',
+            theme: 'light'
+          });
+          return newWidgetId;
+        } catch (e) {
+          console.log('Turnstile render failed:', e);
+        }
+      }
+      
+      return null;
+    }
     
     // Password Login
     const passwordForm = document.getElementById('passwordLoginForm');
@@ -370,8 +408,12 @@ export function buildLoginPage(message = '', error = '') {
         // 获取 Turnstile token（如果显示了验证）
         let turnstileToken = null;
         const container1 = document.getElementById('turnstileContainer1');
-        if (container1 && container1.classList.contains('show') && window.turnstile) {
-          turnstileToken = turnstile.getResponse();
+        if (container1 && container1.classList.contains('show') && window.turnstile && turnstileWidget1) {
+          try {
+            turnstileToken = turnstile.getResponse(turnstileWidget1);
+          } catch (e) {
+            console.log('Failed to get Turnstile response:', e);
+          }
         }
         
         const response = await fetch('/api/auth/login', {
@@ -397,7 +439,7 @@ export function buildLoginPage(message = '', error = '') {
           
           // 2次失败后显示人机验证
           if (data.requireCaptcha || passwordFailCount >= 2) {
-            document.getElementById('turnstileContainer1').classList.add('show');
+            turnstileWidget1 = showTurnstile(turnstileWidget1, 'turnstileContainer1');
           }
           
           messageBox.className = 'message error';
@@ -405,11 +447,6 @@ export function buildLoginPage(message = '', error = '') {
           messageBox.style.display = 'block';
           passwordSubmitBtn.disabled = false;
           passwordSubmitBtn.classList.remove('loading');
-          
-          // 重置 Turnstile
-          if (window.turnstile && document.getElementById('turnstileContainer1').classList.contains('show')) {
-            turnstile.reset();
-          }
         }
       } catch (error) {
         messageBox.className = 'message error';
@@ -491,8 +528,12 @@ export function buildLoginPage(message = '', error = '') {
         // 获取 Turnstile token（如果显示了验证）
         let turnstileToken = null;
         const container2 = document.getElementById('turnstileContainer2');
-        if (container2 && container2.classList.contains('show') && window.turnstile) {
-          turnstileToken = turnstile.getResponse();
+        if (container2 && container2.classList.contains('show') && window.turnstile && turnstileWidget2) {
+          try {
+            turnstileToken = turnstile.getResponse(turnstileWidget2);
+          } catch (e) {
+            console.log('Failed to get Turnstile response:', e);
+          }
         }
         
         const response = await fetch('/api/auth/login', {
@@ -518,7 +559,7 @@ export function buildLoginPage(message = '', error = '') {
           
           // 2次失败后显示人机验证
           if (data.requireCaptcha || codeFailCount >= 2) {
-            document.getElementById('turnstileContainer2').classList.add('show');
+            turnstileWidget2 = showTurnstile(turnstileWidget2, 'turnstileContainer2');
           }
           
           messageBox.className = 'message error';
@@ -526,11 +567,6 @@ export function buildLoginPage(message = '', error = '') {
           messageBox.style.display = 'block';
           codeSubmitBtn.disabled = false;
           codeSubmitBtn.classList.remove('loading');
-          
-          // 重置 Turnstile
-          if (window.turnstile && document.getElementById('turnstileContainer2').classList.contains('show')) {
-            turnstile.reset();
-          }
         }
       } catch (error) {
         messageBox.className = 'message error';
