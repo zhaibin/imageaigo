@@ -3,7 +3,7 @@
  * 处理验证码的生成、存储、验证和清理
  */
 
-import { sendVerificationCode } from './email-service.js';
+import { sendVerificationCode } from './email.js';
 
 /**
  * 生成 6 位数字验证码

@@ -3,7 +3,7 @@
  * 用于保护需要登录才能访问的路由
  */
 
-import { verifySession } from './auth';
+import { verifySession } from './auth.js';
 
 /**
  * 从请求中提取 session token

@@ -2,8 +2,8 @@
  * 后台用户管理 API 处理函数
  */
 
-import { handleCORS } from './utils';
-import { verifyAdminToken } from './index';
+import { handleCORS } from '../../lib/utils.js';
+import { verifyAdminToken } from '../../index.js';
 
 /**
  * 获取用户列表（支持搜索和分页）

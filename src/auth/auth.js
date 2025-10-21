@@ -3,8 +3,8 @@
  * 处理用户注册、登录、密码找回等功能
  */
 
-import { sendCode, verifyCode } from './verification-code.js';
-import { sendPasswordResetEmail } from './email-service.js';
+import { sendCode, verifyCode } from './verification.js';
+import { sendPasswordResetEmail } from './email.js';
 import { 
   recordLoginFailure, 
   clearLoginFailures, 
@@ -12,7 +12,7 @@ import {
   isLockedOut,
   lockAccount,
   getFailureStats
-} from './brute-force-protection.js';
+} from './brute-force.js';
 
 /**
  * 密码哈希函数（使用 Web Crypto API）

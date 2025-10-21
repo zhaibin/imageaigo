@@ -1,5 +1,5 @@
 // Unsplash 自动同步模块（使用队列）
-import { generateHash } from './utils.js';
+import { generateHash } from '../lib/utils.js';
 
 // Cron 触发器 - 每天同步一次 Unsplash 随机图片
 export async function handleUnsplashSync(env) {

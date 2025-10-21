@@ -1,5 +1,5 @@
 // 管理后台模块
-import { escapeHtml } from './templates';
+import { escapeHtml } from '../../templates/index.js';
 
 // 生成管理后台登录页面
 export function buildAdminLoginPage() {

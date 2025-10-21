@@ -1,22 +1,31 @@
-import { analyzeImage, getImageDimensions } from './analyzer';
-import { getRecommendations } from './recommendations';
-import { handleCORS, generateHash as utilsGenerateHash } from './utils';
-import { buildMainHTML, buildLegalPage, buildPageTemplate } from './html-builder';
-import { PRIVACY_CONTENT, TERMS_CONTENT, ABOUT_CONTENT } from './pages';
-import { escapeHtml } from './templates';
-import { generateSlug, generateTagSlug } from './slug-generator';
-import { buildAdminLoginPage, buildAdminDashboard } from './admin';
-import { buildFooter } from './footer-template';
-import { handleQueue } from './queue-handler';
-import { handleUnsplashSync } from './unsplash-sync';
-import { buildLoginPage, buildRegisterPage, buildForgotPasswordPage, buildResetPasswordPage } from './user-pages';
-import { registerUser, loginUser, loginUserWithCode, logoutUser, requestPasswordReset, resetPassword, getUserInfo, verifySession, changePassword } from './auth';
-import { requireAuth, createResponseWithSession, createResponseWithoutSession, optionalAuth } from './auth-middleware';
-import { handleAdminUsers, handleAdminUserDetail, handleAdminUpdateUser, handleAdminDeleteUser } from './admin-users';
-import { buildProfilePage } from './profile-page';
-import { sendCode } from './verification-code.js';
-import { sendPasswordResetEmail } from './email-service.js';
-import { verifyTurnstile, shouldRequireCaptcha } from './brute-force-protection.js';
+// 服务层
+import { analyzeImage, getImageDimensions } from './services/ai/analyzer.js';
+import { getRecommendations } from './services/ai/recommendations.js';
+import { generateSlug, generateTagSlug } from './services/slug.js';
+import { handleQueue } from './services/queue.js';
+import { handleUnsplashSync } from './services/unsplash.js';
+
+// 工具库
+import { handleCORS, generateHash as utilsGenerateHash } from './lib/utils.js';
+
+// 页面模块
+import { buildMainHTML, buildLegalPage, buildPageTemplate } from './pages/home.js';
+import { PRIVACY_CONTENT, TERMS_CONTENT, ABOUT_CONTENT } from './pages.js';
+import { buildLoginPage, buildRegisterPage, buildForgotPasswordPage, buildResetPasswordPage } from './pages/user/auth-pages.js';
+import { buildProfilePage } from './pages/user/profile.js';
+import { buildAdminLoginPage, buildAdminDashboard } from './pages/admin/index.js';
+import { handleAdminUsers, handleAdminUserDetail, handleAdminUpdateUser, handleAdminDeleteUser } from './pages/admin/users.js';
+
+// 模板系统
+import { escapeHtml } from './templates/index.js';
+import { buildFooter } from './templates/footer.js';
+
+// 认证模块
+import { registerUser, loginUser, loginUserWithCode, logoutUser, requestPasswordReset, resetPassword, getUserInfo, verifySession, changePassword } from './auth/auth.js';
+import { requireAuth, createResponseWithSession, createResponseWithoutSession, optionalAuth } from './auth/middleware.js';
+import { sendCode } from './auth/verification.js';
+import { sendPasswordResetEmail } from './auth/email.js';
+import { verifyTurnstile, shouldRequireCaptcha } from './auth/brute-force.js';
 
 export default {
   async fetch(request, env, ctx) {

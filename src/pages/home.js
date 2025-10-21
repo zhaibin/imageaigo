@@ -3,10 +3,10 @@
  * Build complete HTML pages with inline styles and scripts
  */
 
-import { MAIN_STYLES, LEGAL_STYLES, PAGE_TEMPLATE_STYLES } from './styles';
-import { PRIVACY_CONTENT, TERMS_CONTENT, ABOUT_CONTENT } from './pages';
-import { escapeHtml } from './templates';
-import { buildFooter } from './footer-template';
+import { MAIN_STYLES, LEGAL_STYLES, PAGE_TEMPLATE_STYLES } from '../styles.js';
+import { PRIVACY_CONTENT, TERMS_CONTENT, ABOUT_CONTENT } from '../pages.js';
+import { escapeHtml } from '../templates/index.js';
+import { buildFooter } from '../templates/footer.js';
 
 export function buildMainHTML() {
   return `<!DOCTYPE html>

@@ -1,6 +1,6 @@
 // Queue 消费者处理逻辑
-import { analyzeImage, getImageDimensions } from './analyzer.js';
-import { generateHash } from './utils.js';
+import { analyzeImage, getImageDimensions } from './ai/analyzer.js';
+import { generateHash } from '../lib/utils.js';
 
 // 队列消费者 - 处理图片分析任务（并发处理，限制并发数）
 export async function handleQueue(batch, env) {
