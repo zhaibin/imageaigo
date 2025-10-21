@@ -5,6 +5,14 @@
 
 import { sendCode, verifyCode } from './verification-code.js';
 import { sendPasswordResetEmail } from './email-service.js';
+import { 
+  recordLoginFailure, 
+  clearLoginFailures, 
+  shouldRequireCaptcha, 
+  isLockedOut,
+  lockAccount,
+  getFailureStats
+} from './brute-force-protection.js';
 
 /**
  * 密码哈希函数（使用 Web Crypto API）
@@ -142,11 +150,17 @@ export async function registerUser(email, password, username, verificationCode, 
  * 用户登录（密码方式）
  * 支持邮箱或用户名登录
  */
-export async function loginUser(emailOrUsername, password, env) {
+export async function loginUser(emailOrUsername, password, ip, env) {
   try {
     // 验证输入
     if (!emailOrUsername || !password) {
       return { success: false, error: 'Please provide email/username and password' };
+    }
+
+    // 检查是否被锁定
+    const lockStatus = await isLockedOut(emailOrUsername, ip, env);
+    if (lockStatus.locked) {
+      return { success: false, error: lockStatus.message, requireCaptcha: true };
     }
 
     // 判断是邮箱还是用户名
@@ -160,14 +174,59 @@ export async function loginUser(emailOrUsername, password, env) {
     ).bind(emailOrUsername).first();
 
     if (!user) {
-      return { success: false, error: 'Invalid credentials' };
+      // 记录失败
+      await recordLoginFailure(emailOrUsername, ip, env);
+      const stats = await getFailureStats(emailOrUsername, ip, env);
+      
+      // 检查是否需要验证码
+      const needsCaptcha = await shouldRequireCaptcha(emailOrUsername, ip, env);
+      
+      // 超过10次失败，锁定15分钟
+      if (stats.identifierFailures >= 10) {
+        await lockAccount(emailOrUsername, ip, 900, env);
+        return { 
+          success: false, 
+          error: 'Too many failed attempts. Account locked for 15 minutes.',
+          requireCaptcha: true
+        };
+      }
+      
+      return { 
+        success: false, 
+        error: 'Invalid credentials',
+        requireCaptcha: needsCaptcha
+      };
     }
 
     // 验证密码
     const isValid = await verifyPassword(password, user.password_hash);
     if (!isValid) {
-      return { success: false, error: 'Invalid credentials' };
+      // 记录失败
+      await recordLoginFailure(emailOrUsername, ip, env);
+      const stats = await getFailureStats(emailOrUsername, ip, env);
+      
+      // 检查是否需要验证码
+      const needsCaptcha = await shouldRequireCaptcha(emailOrUsername, ip, env);
+      
+      // 超过10次失败，锁定15分钟
+      if (stats.identifierFailures >= 10) {
+        await lockAccount(emailOrUsername, ip, 900, env);
+        return { 
+          success: false, 
+          error: 'Too many failed attempts. Account locked for 15 minutes.',
+          requireCaptcha: true
+        };
+      }
+      
+      return { 
+        success: false, 
+        error: 'Invalid credentials',
+        requireCaptcha: needsCaptcha
+      };
     }
+
+    // 登录成功，清除失败记录
+    await clearLoginFailures(emailOrUsername, ip, env);
 
     // 生成 session token
     const sessionToken = generateToken(48);
@@ -204,11 +263,17 @@ export async function loginUser(emailOrUsername, password, env) {
  * 用户登录（验证码方式）
  * 支持邮箱或用户名（验证码发送到注册邮箱）
  */
-export async function loginUserWithCode(emailOrUsername, verificationCode, env) {
+export async function loginUserWithCode(emailOrUsername, verificationCode, ip, env) {
   try {
     // 验证输入
     if (!emailOrUsername || !verificationCode) {
       return { success: false, error: 'Please provide email/username and verification code' };
+    }
+
+    // 检查是否被锁定
+    const lockStatus = await isLockedOut(emailOrUsername, ip, env);
+    if (lockStatus.locked) {
+      return { success: false, error: lockStatus.message, requireCaptcha: true };
     }
 
     // 判断是邮箱还是用户名
@@ -222,14 +287,31 @@ export async function loginUserWithCode(emailOrUsername, verificationCode, env) 
     ).bind(emailOrUsername).first();
 
     if (!user) {
-      return { success: false, error: 'User not found' };
+      // 记录失败
+      await recordLoginFailure(emailOrUsername, ip, env);
+      const needsCaptcha = await shouldRequireCaptcha(emailOrUsername, ip, env);
+      return { 
+        success: false, 
+        error: 'User not found',
+        requireCaptcha: needsCaptcha
+      };
     }
 
     // 验证验证码（使用用户的邮箱）
     const codeVerification = await verifyCode(user.email, verificationCode, 'login', env);
     if (!codeVerification.valid) {
-      return { success: false, error: codeVerification.error };
+      // 记录失败
+      await recordLoginFailure(emailOrUsername, ip, env);
+      const needsCaptcha = await shouldRequireCaptcha(emailOrUsername, ip, env);
+      return { 
+        success: false, 
+        error: codeVerification.error,
+        requireCaptcha: needsCaptcha
+      };
     }
+
+    // 登录成功，清除失败记录
+    await clearLoginFailures(emailOrUsername, ip, env);
 
     // 生成 session token
     const sessionToken = generateToken(48);

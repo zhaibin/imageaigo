@@ -14,6 +14,9 @@ export function buildLoginPage(message = '', error = '') {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login - ImageAI Go</title>
   
+  <!-- Cloudflare Turnstile -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+  
   <!-- Google Analytics 4 -->
   <script async src="https://www.googletagmanager.com/gtag/js?id=G-RGN9QJ4Y0Y"></script>
   <script>
@@ -227,6 +230,22 @@ export function buildLoginPage(message = '', error = '') {
       cursor: not-allowed;
       transform: translateY(-50%);
     }
+    .turnstile-container {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      display: none;
+    }
+    .turnstile-container.show {
+      display: block;
+    }
+    .turnstile-title {
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 10px;
+      text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -260,6 +279,12 @@ export function buildLoginPage(message = '', error = '') {
           <input type="password" id="password" name="password" required autocomplete="current-password" class="normal-input">
         </div>
         
+        <!-- Turnstile CAPTCHA (shown after 2 failed attempts) -->
+        <div class="turnstile-container" id="turnstileContainer1">
+          <div class="turnstile-title">🛡️ Human Verification Required</div>
+          <div class="cf-turnstile" data-sitekey="0x4AAAAAAAzX8PJx0lF_CDHO" data-theme="light" id="turnstile1"></div>
+        </div>
+        
         <button type="submit" class="btn" id="passwordSubmitBtn">
           <span class="btn-text">Login</span>
           <div class="spinner"></div>
@@ -283,6 +308,12 @@ export function buildLoginPage(message = '', error = '') {
           </div>
         </div>
         
+        <!-- Turnstile CAPTCHA (shown after 2 failed attempts) -->
+        <div class="turnstile-container" id="turnstileContainer2">
+          <div class="turnstile-title">🛡️ Human Verification Required</div>
+          <div class="cf-turnstile" data-sitekey="0x4AAAAAAAzX8PJx0lF_CDHO" data-theme="light" id="turnstile2"></div>
+        </div>
+        
         <button type="submit" class="btn" id="codeSubmitBtn">
           <span class="btn-text">Login</span>
           <div class="spinner"></div>
@@ -301,6 +332,8 @@ export function buildLoginPage(message = '', error = '') {
 
   <script>
     const messageBox = document.getElementById('messageBox');
+    let passwordFailCount = 0;
+    let codeFailCount = 0;
     
     // Tab switching
     const tabs = document.querySelectorAll('.tab');
@@ -334,10 +367,16 @@ export function buildLoginPage(message = '', error = '') {
       messageBox.style.display = 'none';
       
       try {
+        // 获取 Turnstile token（如果显示了验证）
+        let turnstileToken = null;
+        if (document.getElementById('turnstileContainer1').classList.contains('show')) {
+          turnstileToken = turnstile.getResponse();
+        }
+        
         const response = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
+          body: JSON.stringify({ email, password, turnstileToken })
         });
         
         const data = await response.json();
@@ -348,14 +387,28 @@ export function buildLoginPage(message = '', error = '') {
           messageBox.style.display = 'block';
           
           setTimeout(() => {
-            window.location.href = '/';
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirect = urlParams.get('redirect') || '/';
+            window.location.href = redirect;
           }, 1000);
         } else {
+          passwordFailCount++;
+          
+          // 2次失败后显示人机验证
+          if (data.requireCaptcha || passwordFailCount >= 2) {
+            document.getElementById('turnstileContainer1').classList.add('show');
+          }
+          
           messageBox.className = 'message error';
           messageBox.textContent = data.error || 'Login failed';
           messageBox.style.display = 'block';
           passwordSubmitBtn.disabled = false;
           passwordSubmitBtn.classList.remove('loading');
+          
+          // 重置 Turnstile
+          if (window.turnstile && document.getElementById('turnstileContainer1').classList.contains('show')) {
+            turnstile.reset();
+          }
         }
       } catch (error) {
         messageBox.className = 'message error';
@@ -434,10 +487,16 @@ export function buildLoginPage(message = '', error = '') {
       messageBox.style.display = 'none';
       
       try {
+        // 获取 Turnstile token（如果显示了验证）
+        let turnstileToken = null;
+        if (document.getElementById('turnstileContainer2').classList.contains('show')) {
+          turnstileToken = turnstile.getResponse();
+        }
+        
         const response = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: emailOrUsername, verificationCode })
+          body: JSON.stringify({ email: emailOrUsername, verificationCode, turnstileToken })
         });
         
         const data = await response.json();
@@ -448,14 +507,28 @@ export function buildLoginPage(message = '', error = '') {
           messageBox.style.display = 'block';
           
           setTimeout(() => {
-            window.location.href = '/';
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirect = urlParams.get('redirect') || '/';
+            window.location.href = redirect;
           }, 1000);
         } else {
+          codeFailCount++;
+          
+          // 2次失败后显示人机验证
+          if (data.requireCaptcha || codeFailCount >= 2) {
+            document.getElementById('turnstileContainer2').classList.add('show');
+          }
+          
           messageBox.className = 'message error';
           messageBox.textContent = data.error || 'Login failed';
           messageBox.style.display = 'block';
           codeSubmitBtn.disabled = false;
           codeSubmitBtn.classList.remove('loading');
+          
+          // 重置 Turnstile
+          if (window.turnstile && document.getElementById('turnstileContainer2').classList.contains('show')) {
+            turnstile.reset();
+          }
         }
       } catch (error) {
         messageBox.className = 'message error';

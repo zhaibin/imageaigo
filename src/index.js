@@ -16,6 +16,7 @@ import { handleAdminUsers, handleAdminUserDetail, handleAdminUpdateUser, handleA
 import { buildProfilePage } from './profile-page';
 import { sendCode } from './verification-code.js';
 import { sendPasswordResetEmail } from './email-service.js';
+import { verifyTurnstile, shouldRequireCaptcha } from './brute-force-protection.js';
 
 export default {
   async fetch(request, env, ctx) {
@@ -2572,21 +2573,57 @@ async function handleUserRegister(request, env) {
 // 用户登录（支持密码登录和验证码登录）
 async function handleUserLogin(request, env) {
   try {
-    const { email, password, verificationCode } = await request.json();
+    const { email, password, verificationCode, turnstileToken } = await request.json();
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+    
+    // 检查是否需要人机验证
+    const needsCaptcha = await shouldRequireCaptcha(email, ip, env);
+    
+    if (needsCaptcha) {
+      // 验证 Turnstile token
+      if (!turnstileToken) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: 'Human verification required',
+          requireCaptcha: true
+        }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...handleCORS().headers
+          }
+        });
+      }
+      
+      const turnstileResult = await verifyTurnstile(turnstileToken, ip, env);
+      if (!turnstileResult.success && !turnstileResult.skipped) {
+        return new Response(JSON.stringify({ 
+          success: false, 
+          error: turnstileResult.error || 'Human verification failed',
+          requireCaptcha: true
+        }), {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+            ...handleCORS().headers
+          }
+        });
+      }
+    }
     
     let result;
     
     // 如果提供了验证码，使用验证码登录
     if (verificationCode) {
-      result = await loginUserWithCode(email, verificationCode, env);
+      result = await loginUserWithCode(email, verificationCode, ip, env);
     } 
     // 否则使用密码登录
     else if (password) {
-      result = await loginUser(email, password, env);
+      result = await loginUser(email, password, ip, env);
     } else {
       return new Response(JSON.stringify({ 
         success: false, 
-        error: '请提供密码或验证码' 
+        error: 'Please provide password or verification code' 
       }), {
         status: 400,
         headers: {
