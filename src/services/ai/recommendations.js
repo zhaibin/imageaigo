@@ -68,6 +68,7 @@ export async function getRecommendations(db, imageId, limit = 8) {
       const candidateTags = candidate.tag_ids.split(',').map(Number);
       const candidateWeights = candidate.weights.split(',').map(Number);
       const candidateLevels = candidate.levels.split(',').map(Number);
+      const candidateTagNames = candidate.tag_names.split(',');
 
       // Multi-dimensional similarity components
       let primaryMatch = 0;      // Primary category overlap
@@ -79,12 +80,32 @@ export async function getRecommendations(db, imageId, limit = 8) {
       let subcategoryCount = 0;
       let attributeCount = 0;
 
+      // 构建标签列表（避免后续 N+1 查询）
+      const tags = {
+        primary: [],
+        subcategories: [],
+        attributes: []
+      };
+
       // Calculate matches by level
       candidateTags.forEach((tagId, idx) => {
+        const level = candidateLevels[idx];
+        const tagName = candidateTagNames[idx];
+        const weight = candidateWeights[idx];
+
+        // 添加到标签列表
+        const tagInfo = { name: tagName, level: level, weight: weight };
+        if (level === 1) {
+          tags.primary.push(tagInfo);
+        } else if (level === 2) {
+          tags.subcategories.push(tagInfo);
+        } else if (level === 3) {
+          tags.attributes.push(tagInfo);
+        }
+
         if (tagWeights[tagId]) {
           const sourceWeight = tagWeights[tagId];
           const targetWeight = candidateWeights[idx];
-          const level = candidateLevels[idx];
 
           // Calculate weighted similarity for this tag
           // Use geometric mean to balance source and target weights
@@ -150,6 +171,7 @@ export async function getRecommendations(db, imageId, limit = 8) {
         slug: candidate.slug,
         image_url: candidate.image_url,
         description: candidate.description,
+        tags: tags, // ✨ 新增：包含标签数据，避免后续 N+1 查询
         similarity: Math.min(compositeSimilarity, 1.0),
         confidence: Math.min(matchQuality, 1.0),
         matched_primary: primaryCount,
