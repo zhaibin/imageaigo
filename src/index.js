@@ -3690,65 +3690,80 @@ async function handleAdminBatchUpload(request, env, ctx) {
     
     await env.CACHE.put(`batch:${batchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 });
     
-    // 快速预处理：检查重复 + 上传到临时存储 + 发送到队列
-    const preprocessPromises = files.map(async (file, index) => {
-      try {
-        console.log(`[BatchUpload:${batchId}:${index}] Preprocessing ${file.name}`);
+    // 串行预处理：一张一张检查重复 + 上传到临时存储 + 发送到队列
+    // 避免超时和并发问题
+    const processFiles = async () => {
+      let queued = 0;
+      let skipped = 0;
+      let failed = 0;
+      
+      for (let index = 0; index < files.length; index++) {
+        const file = files[index];
         
-        // 读取文件数据
-        const imageData = await file.arrayBuffer();
-        
-        // 检查大小
-        if (imageData.byteLength > 20 * 1024 * 1024) {
-          await updateBatchStatus(env, batchId, index, 'failed', 'File too large (>20MB)', file.name);
-          return;
-        }
-        
-        // 生成哈希
-        const imageHash = await generateHash(imageData);
-        
-        // 检查是否已存在
-        const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?')
-          .bind(imageHash).first();
-        
-        if (existing) {
-          console.log(`[BatchUpload:${batchId}:${index}] Duplicate found: ${existing.slug}`);
-          await updateBatchStatus(env, batchId, index, 'skipped', `Duplicate of ${existing.slug}`, file.name);
-          return;
-        }
-        
-        // 上传到临时存储（用于队列处理）
-        const tempKey = `temp/${batchId}/${index}`;
-        await env.R2.put(tempKey, imageData, {
-          httpMetadata: { contentType: file.type || 'image/jpeg' },
-          customMetadata: {
-            hash: imageHash,
-            fileName: file.name,
-            batchId: batchId,
-            fileIndex: index.toString()
+        try {
+          console.log(`[BatchUpload:${index + 1}/${files.length}] Processing ${file.name}`);
+          
+          // 读取文件数据
+          const imageData = await file.arrayBuffer();
+          
+          // 检查大小
+          if (imageData.byteLength > 20 * 1024 * 1024) {
+            await updateBatchStatus(env, batchId, index, 'skipped', 'File too large (>20MB)', file.name);
+            skipped++;
+            continue; // 跳过
           }
-        });
-        
-        // 发送消息到队列
-        await env.IMAGE_QUEUE.send({
-          batchId,
-          fileIndex: index,
-          fileName: file.name,
-          imageHash,
-          contentType: file.type || 'image/jpeg'
-        });
-        
-        console.log(`[BatchUpload:${batchId}:${index}] Queued for processing`);
-        
-      } catch (error) {
-        console.error(`[BatchUpload:${batchId}:${index}] Preprocessing failed:`, error.message);
-        await updateBatchStatus(env, batchId, index, 'failed', error.message, file.name);
+          
+          // 生成哈希
+          const imageHash = await generateHash(imageData);
+          
+          // 检查是否已存在
+          const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?')
+            .bind(imageHash).first();
+          
+          if (existing) {
+            console.log(`[BatchUpload:${index + 1}/${files.length}] Duplicate: ${existing.slug}, skipped`);
+            await updateBatchStatus(env, batchId, index, 'skipped', `Duplicate: ${existing.slug}`, file.name);
+            skipped++;
+            continue; // 重复直接跳过 ✅
+          }
+          
+          // 上传到临时存储（用于队列处理）
+          const tempKey = `temp/${batchId}/${index}`;
+          await env.R2.put(tempKey, imageData, {
+            httpMetadata: { contentType: file.type || 'image/jpeg' },
+            customMetadata: {
+              hash: imageHash,
+              fileName: file.name,
+              batchId: batchId,
+              fileIndex: index.toString()
+            }
+          });
+          
+          // 发送消息到队列
+          await env.IMAGE_QUEUE.send({
+            batchId,
+            fileIndex: index,
+            fileName: file.name,
+            imageHash,
+            contentType: file.type || 'image/jpeg'
+          });
+          
+          queued++;
+          console.log(`[BatchUpload:${index + 1}/${files.length}] Queued`);
+          
+        } catch (error) {
+          console.error(`[BatchUpload:${index + 1}/${files.length}] Failed:`, error.message);
+          await updateBatchStatus(env, batchId, index, 'failed', error.message, file.name);
+          failed++;
+        }
       }
-    });
+      
+      console.log(`[BatchUpload] Preprocessing done: ${queued} queued, ${skipped} skipped, ${failed} failed`);
+    };
     
     // 使用 waitUntil 确保预处理完成
     if (ctx && ctx.waitUntil) {
-      ctx.waitUntil(Promise.all(preprocessPromises));
+      ctx.waitUntil(processFiles());
     }
     
     // 立即返回响应

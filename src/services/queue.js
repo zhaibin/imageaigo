@@ -275,8 +275,34 @@ async function processQueueMessage(message, env) {
     const duration = Date.now() - startTime;
     console.error(`[QueueConsumer:${batchId}:${fileIndex}] Failed after ${duration}ms:`, error.message);
     
-    // 更新状态：失败
-    await updateBatchStatus(env, batchId, fileIndex, 'failed', error.message);
+    // 检查错误类型
+    const isAIError = error.message.includes('AI') || error.message.includes('timeout') || error.message.includes('analysis');
+    const isDuplicate = error.message.includes('Duplicate');
+    
+    if (isAIError) {
+      // AI 分析失败：直接跳过，不重试 ✅
+      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] AI analysis failed, skipping`);
+      await updateBatchStatus(env, batchId, fileIndex, 'skipped', `AI failed: ${error.message}`);
+      message.ack(); // 确认消息，不再重试
+    } else if (isDuplicate) {
+      // 重复图片：跳过
+      await updateBatchStatus(env, batchId, fileIndex, 'skipped', error.message);
+      message.ack();
+    } else {
+      // 其他错误：标记为失败
+      await updateBatchStatus(env, batchId, fileIndex, 'failed', error.message);
+      
+      // 重试次数检查
+      if (message.attempts >= 3) {
+        console.error(`[QueueConsumer:${batchId}:${fileIndex}] Max retries reached, giving up`);
+        message.ack(); // 确认消息，不再重试
+      } else {
+        // 重试（消息会自动重新入队）
+        console.log(`[QueueConsumer:${batchId}:${fileIndex}] Will retry (attempt ${message.attempts + 1}/3)`);
+        message.retry();
+        return; // 重试时不清理临时文件
+      }
+    }
     
     // 清理临时文件（根据来源类型构建路径）
     try {
@@ -284,18 +310,13 @@ async function processQueueMessage(message, env) {
         ? `temp/unsplash/${batchId}/${fileIndex}`
         : `temp/${batchId}/${fileIndex}`;
       await env.R2.delete(tempKey);
+      
+      // 清理 AI 临时图片（如果存在）
+      if (aiImageKey) {
+        await env.R2.delete(aiImageKey);
+      }
     } catch (cleanupErr) {
       console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Cleanup failed:`, cleanupErr.message);
-    }
-    
-    // 重试次数检查
-    if (message.attempts >= 3) {
-      console.error(`[QueueConsumer:${batchId}:${fileIndex}] Max retries reached, giving up`);
-      message.ack(); // 确认消息，不再重试
-    } else {
-      // 重试（消息会自动重新入队）
-      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Will retry (attempt ${message.attempts + 1}/3)`);
-      message.retry();
     }
   }
 }

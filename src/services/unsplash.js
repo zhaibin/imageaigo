@@ -1,9 +1,18 @@
-// Unsplash 自动同步模块（使用队列）
-import { generateHash } from '../lib/utils.js';
+/**
+ * Unsplash 自动同步模块 - 串行处理版本
+ * 一张一张处理，逻辑与单张上传完全一致，避免超时
+ */
 
-// Cron 触发器 - 每天同步一次 Unsplash 随机图片
+import { generateHash } from '../lib/utils.js';
+import { analyzeImage, getImageDimensions } from './ai/analyzer.js';
+import { generateSlug } from './slug.js';
+
+/**
+ * Cron 触发器 - 每天同步一次 Unsplash 随机图片
+ * 串行处理每张图片，避免超时和并发问题
+ */
 export async function handleUnsplashSync(env) {
-  console.log('[UnsplashSync] Starting daily Unsplash sync');
+  console.log('[UnsplashSync] Starting daily sync (serial mode)');
   
   const UNSPLASH_ACCESS_KEY = env.UNSPLASH_ACCESS_KEY;
   
@@ -13,215 +22,120 @@ export async function handleUnsplashSync(env) {
   }
   
   try {
-    // 获取50张随机高质量图片
-    // 注意：Unsplash API的random端点一次最多返回30张，所以我们分2次请求
-    const count = 50;
-    const photosPerRequest = 30;
-    const requests = Math.ceil(count / photosPerRequest);
+    // 获取 30 张随机图片（Unsplash API 限制）
+    const count = 30;
+    console.log(`[UnsplashSync] Fetching ${count} photos from Unsplash`);
     
-    let allPhotos = [];
-    
-    for (let i = 0; i < requests; i++) {
-      const requestCount = Math.min(photosPerRequest, count - allPhotos.length);
-      console.log(`[UnsplashSync] Fetching batch ${i + 1}/${requests} (${requestCount} photos)`);
-      
-      const response = await fetch(
-        `https://api.unsplash.com/photos/random?count=${requestCount}&orientation=landscape`,
-        {
-          headers: {
-            'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
-          }
+    const response = await fetch(
+      `https://api.unsplash.com/photos/random?count=${count}&orientation=landscape`,
+      {
+        headers: {
+          'Authorization': `Client-ID ${UNSPLASH_ACCESS_KEY}`
         }
-      );
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Unsplash API error: ${response.status} - ${errorText}`);
       }
-      
-      const batchPhotos = await response.json();
-      allPhotos = allPhotos.concat(batchPhotos);
-      
-      // 避免API限流，批次之间稍微延迟
-      if (i < requests - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+    );
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Unsplash API error: ${response.status} - ${errorText}`);
     }
     
-    const photos = allPhotos;
-    console.log(`[UnsplashSync] Fetched ${photos.length} random photos from Unsplash`);
+    const photos = await response.json();
+    console.log(`[UnsplashSync] Fetched ${photos.length} photos`);
     
-    // 生成同步批次ID
-    const syncBatchId = `unsplash_${Date.now()}`;
+    // 查询随机用户（一次查询，避免重复）
+    const randomUsers = await env.DB.prepare(
+      'SELECT id FROM users WHERE is_random = 1 ORDER BY id'
+    ).all();
     
-    // 初始化批次状态到 KV（重要！队列消费者需要）
-    const batchStatus = {
-      batchId: syncBatchId,
-      total: photos.length,
-      completed: 0,
-      failed: 0,
-      skipped: 0,
-      processing: 0,
-      status: 'processing',
-      startTime: Date.now(),
-      lastActivity: Date.now(),
-      currentFile: '',
-      sourceType: 'unsplash',
-      files: photos.map(p => ({ name: `unsplash-${p.id}.jpg`, status: 'pending' }))
-    };
+    if (!randomUsers.results || randomUsers.results.length === 0) {
+      console.warn('[UnsplashSync] No random users found');
+      return { success: false, error: 'No random users available' };
+    }
     
-    await env.CACHE.put(`batch:${syncBatchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 });
-    console.log(`[UnsplashSync] Batch status initialized: ${syncBatchId}`);
-    
-    let queued = 0;
+    let completed = 0;
     let skipped = 0;
     let failed = 0;
     
-    // 快速预处理：下载、检查重复、上传到临时存储、发送到队列
-    // 使用更小的批次减少并发，避免 KV 429 错误
-    const batchSize = 5; // 每批5张，更保守
-    const batches = [];
-    for (let i = 0; i < photos.length; i += batchSize) {
-      batches.push(photos.slice(i, i + batchSize));
-    }
-    
-    let allResults = [];
-    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-      console.log(`[UnsplashSync] Processing batch ${batchIdx + 1}/${batches.length}`);
+    // 串行处理：一张一张处理
+    for (let i = 0; i < photos.length; i++) {
+      const photo = photos[i];
+      const photoNum = i + 1;
       
-      const batchPhotos = batches[batchIdx];
-      const startIndex = batchIdx * batchSize;
-      
-      const batchResults = await Promise.allSettled(
-        batchPhotos.map(async (photo, idx) => {
-          const index = startIndex + idx;
-          try {
-            console.log(`[UnsplashSync:${index}] Preprocessing ${photo.id}`);
-          
-          // 下载图片
-          const imageUrl = photo.urls.regular;
-          const imageResponse = await fetch(imageUrl);
-          
-          if (!imageResponse.ok) {
-            throw new Error(`Failed to download: ${imageResponse.status}`);
-          }
-          
-          const imageData = await imageResponse.arrayBuffer();
-          
-          // 检查大小
-          if (imageData.byteLength > 20 * 1024 * 1024) {
-            await updateBatchFileStatus(env, syncBatchId, index, 'failed', 'Too large');
-            return { status: 'skipped', reason: 'Too large' };
-          }
-          
-          // 生成哈希
-          const hash = await generateHash(imageData);
-          
-          // 检查重复
-          const existing = await env.DB.prepare('SELECT id, slug FROM images WHERE image_hash = ?')
-            .bind(hash).first();
-          
-          if (existing) {
-            console.log(`[UnsplashSync:${index}] Duplicate: ${existing.slug}`);
-            await updateBatchFileStatus(env, syncBatchId, index, 'skipped', `Duplicate: ${existing.slug}`);
-            return { status: 'skipped', reason: 'Duplicate' };
-          }
-          
-          // 上传到临时 R2
-          const tempKey = `temp/unsplash/${syncBatchId}/${index}`;
-          await env.R2.put(tempKey, imageData, {
-            httpMetadata: { contentType: 'image/jpeg' },
-            customMetadata: {
-              hash: hash,
-              fileName: `unsplash-${photo.id}.jpg`,
-              unsplashId: photo.id,
-              unsplashAuthor: photo.user?.name || 'Unknown',
-              unsplashLink: photo.links?.html || '',
-              sourceUrl: 'unsplash'
-            }
-          });
-          
-          // 发送到队列
-          // 随机分配给随机用户（is_random=1）
-          // 查询所有随机用户的ID
-          const randomUsers = await env.DB.prepare(
-            'SELECT id FROM users WHERE is_random = 1 ORDER BY id'
-          ).all();
-          
-          if (!randomUsers.results || randomUsers.results.length === 0) {
-            console.warn('[UnsplashSync] No random users found, skipping');
-            return { status: 'error', message: 'No random users available' };
-          }
-          
-          // 随机选择一个用户
-          const randomUser = randomUsers.results[Math.floor(Math.random() * randomUsers.results.length)];
-          const randomUserId = randomUser.id;
-          
-          await env.IMAGE_QUEUE.send({
-            batchId: syncBatchId,
-            fileIndex: index,
-            fileName: `unsplash-${photo.id}.jpg`,
-            imageHash: hash,
-            contentType: 'image/jpeg',
-            sourceType: 'unsplash',
-            userId: randomUserId
-          });
-          
-            console.log(`[UnsplashSync:${index}] Queued: ${photo.id}`);
-            return { status: 'queued', index };
-            
-          } catch (error) {
-            console.error(`[UnsplashSync] Preprocessing failed for ${photo.id}:`, error.message);
-            await updateBatchFileStatus(env, syncBatchId, index, 'failed', error.message);
-            return { status: 'failed', error: error.message };
-          }
-        })
-      );
-      
-      allResults = allResults.concat(batchResults);
-      
-      // 批次间延迟，避免速率限制
-      if (batchIdx < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到 1 秒
-      }
-    }
-    
-    const preprocessResults = allResults;
-    
-    // 统计结果
-    for (const result of preprocessResults) {
-      if (result.status === 'fulfilled') {
-        if (result.value.status === 'queued') {
-          queued++;
-        } else if (result.value.status === 'skipped') {
-          skipped++;
-        } else if (result.value.status === 'failed') {
+      try {
+        console.log(`[UnsplashSync:${photoNum}/${photos.length}] Processing ${photo.id}`);
+        
+        // 1. 下载图片（10秒超时）
+        const imageUrl = photo.urls.regular;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        
+        const imageResponse = await fetch(imageUrl, { signal: controller.signal });
+        clearTimeout(timeout);
+        
+        if (!imageResponse.ok) {
+          console.warn(`[UnsplashSync:${photoNum}] Download failed: HTTP ${imageResponse.status}`);
           failed++;
+          continue; // 跳过这张，继续下一张
         }
-      } else {
+        
+        const imageData = await imageResponse.arrayBuffer();
+        const sizeMB = imageData.byteLength / (1024 * 1024);
+        
+        // 2. 检查大小
+        if (sizeMB > 20) {
+          console.warn(`[UnsplashSync:${photoNum}] Too large: ${sizeMB.toFixed(2)}MB, skipped`);
+          skipped++;
+          continue;
+        }
+        
+        console.log(`[UnsplashSync:${photoNum}] Downloaded: ${sizeMB.toFixed(2)}MB`);
+        
+        // 3. 检查重复
+        const imageHash = await generateHash(imageData);
+        const existing = await env.DB.prepare(
+          'SELECT id, slug FROM images WHERE image_hash = ?'
+        ).bind(imageHash).first();
+        
+        if (existing) {
+          console.log(`[UnsplashSync:${photoNum}] Duplicate: ${existing.slug}, skipped`);
+          skipped++;
+          continue; // 重复直接跳过，不进行 AI 分析 ✅
+        }
+        
+        // 4. 处理图片（与单张上传逻辑完全一致）
+        const result = await processSingleUnsplashImage(
+          env,
+          imageData,
+          imageHash,
+          randomUsers.results,
+          photo
+        );
+        
+        if (result.success) {
+          console.log(`[UnsplashSync:${photoNum}] ✅ Success: ${result.slug}`);
+          completed++;
+        } else {
+          console.warn(`[UnsplashSync:${photoNum}] ❌ AI failed, skipped: ${result.error}`);
+          skipped++; // AI 分析失败也跳过 ✅
+        }
+        
+      } catch (error) {
+        console.error(`[UnsplashSync:${photoNum}] Error: ${error.message}, skipped`);
         failed++;
+        // 继续处理下一张
       }
     }
     
-    console.log(`[UnsplashSync] Preprocessing completed: ${queued} queued, ${skipped} skipped, ${failed} failed`);
-    
-    // 更新批次状态中的实际计数
-    const statusKey = `batch:${syncBatchId}`;
-    const currentStatus = await env.CACHE.get(statusKey);
-    if (currentStatus) {
-      const batchData = JSON.parse(currentStatus);
-      batchData.total = photos.length;
-      await env.CACHE.put(statusKey, JSON.stringify(batchData), { expirationTtl: 3600 });
-    }
+    console.log(`[UnsplashSync] Completed: ${completed} success, ${skipped} skipped, ${failed} failed`);
     
     return {
       success: true,
-      queued,
+      completed,
       skipped,
       failed,
       total: photos.length,
-      batchId: syncBatchId,
-      message: `${queued} photos queued for processing, ${skipped} skipped (duplicates)`
+      message: `${completed} photos processed, ${skipped} skipped`
     };
     
   } catch (error) {
@@ -233,72 +147,220 @@ export async function handleUnsplashSync(env) {
   }
 }
 
-// 更新批次文件状态（激进优化版本，节流机制）
-async function updateBatchFileStatus(env, batchId, fileIndex, status, error = null) {
+/**
+ * 处理单张 Unsplash 图片
+ * 逻辑与前端单张上传完全一致
+ */
+async function processSingleUnsplashImage(env, imageData, imageHash, randomUsers, photo) {
   try {
-    const statusKey = `batch:${batchId}`;
+    // 随机选择一个用户
+    const randomUser = randomUsers[Math.floor(Math.random() * randomUsers.length)];
+    const userId = randomUser.id;
     
-    // 初始化缓存和节流器
-    if (!globalThis.batchStatusCache) {
-      globalThis.batchStatusCache = new Map();
-    }
-    if (!globalThis.kvUpdateQueue) {
-      globalThis.kvUpdateQueue = new Map();
-    }
+    // 生成文件名
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8);
+    const baseKey = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}`;
+    const r2Key = `${baseKey}-original.jpg`;
     
-    let batchStatus = globalThis.batchStatusCache.get(statusKey);
-    
-    if (!batchStatus) {
-      const currentStatus = await env.CACHE.get(statusKey);
-      if (!currentStatus) return;
-      batchStatus = JSON.parse(currentStatus);
-      globalThis.batchStatusCache.set(statusKey, batchStatus);
-    }
-    
-    if (batchStatus.files[fileIndex]) {
-      batchStatus.files[fileIndex].status = status;
-      if (error) {
-        batchStatus.files[fileIndex].error = error;
+    // 1. 上传原图到 R2
+    await env.R2.put(r2Key, imageData, {
+      httpMetadata: { contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000' },
+      customMetadata: {
+        uploadedAt: new Date().toISOString(),
+        hash: imageHash,
+        type: 'original',
+        source: 'unsplash',
+        unsplashId: photo.id,
+        unsplashAuthor: photo.user?.name || 'Unknown'
       }
-    }
+    });
     
-    // 更新计数
-    batchStatus.completed = batchStatus.files.filter(f => f.status === 'completed').length;
-    batchStatus.failed = batchStatus.files.filter(f => f.status === 'failed').length;
-    batchStatus.skipped = batchStatus.files.filter(f => f.status === 'skipped').length;
-    batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
-    batchStatus.lastActivity = Date.now();
+    const finalUrl = `/r2/${r2Key}`;
     
-    // 节流机制：只有每 5 个更新或最后一个才写入 KV
-    const totalProcessed = batchStatus.completed + batchStatus.failed + batchStatus.skipped;
-    const shouldUpdate = 
-      totalProcessed % 5 === 0 || // 每 5 个更新一次
-      totalProcessed === batchStatus.total || // 最后一个
-      status === 'failed'; // 失败立即更新
+    // 2. 获取原图尺寸
+    const dimensions = await getImageDimensions(imageData);
+    const maxDimension = Math.max(dimensions.width, dimensions.height);
     
-    if (shouldUpdate) {
-      // 取消之前的更新队列（如果有）
-      const existingTimeout = globalThis.kvUpdateQueue.get(statusKey);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-      }
-      
-      // 延迟 1 秒后更新，合并多个更新请求
-      const timeout = setTimeout(() => {
-        env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 })
-          .then(() => {
-            console.log(`[UpdateBatchFileStatus] KV updated: ${totalProcessed}/${batchStatus.total}`);
-            globalThis.kvUpdateQueue.delete(statusKey);
-          })
-          .catch(err => {
-            console.warn('[UpdateBatchFileStatus] KV update failed:', err.message);
+    // 3. 生成展示图（1080px WebP）如果需要
+    let displayUrl = finalUrl;
+    if (maxDimension > 1080) {
+      try {
+        const displayResponse = await fetch(`https://imageaigo.cc${finalUrl}`, {
+          cf: {
+            image: {
+              width: 1080,
+              height: 1080,
+              quality: 85,
+              fit: 'scale-down',
+              format: 'webp'
+            }
+          }
+        });
+        
+        if (displayResponse.ok) {
+          const displayImageData = await displayResponse.arrayBuffer();
+          const displayKey = `${baseKey}-display.webp`;
+          
+          await env.R2.put(displayKey, displayImageData, {
+            httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000' },
+            customMetadata: {
+              uploadedAt: new Date().toISOString(),
+              hash: imageHash,
+              type: 'display',
+              originalKey: r2Key
+            }
           });
-      }, 1000);
-      
-      globalThis.kvUpdateQueue.set(statusKey, timeout);
+          
+          displayUrl = `/r2/${displayKey}`;
+          console.log(`  Display: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP`);
+        }
+      } catch (err) {
+        console.warn('  Display generation failed:', err.message);
+      }
     }
     
-  } catch (err) {
-    console.error('[UpdateBatchFileStatus] Error:', err.message);
+    // 4. 生成 AI 分析图（256px JPEG）
+    let aiImageData = imageData;
+    const sizeMB = imageData.byteLength / (1024 * 1024);
+    
+    if (sizeMB > 2) {
+      try {
+        const aiResponse = await fetch(`https://imageaigo.cc${finalUrl}`, {
+          cf: {
+            image: {
+              width: 256,
+              height: 256,
+              quality: 80,
+              fit: 'scale-down',
+              format: 'jpeg'
+            }
+          }
+        });
+        
+        if (aiResponse.ok) {
+          aiImageData = await aiResponse.arrayBuffer();
+          console.log(`  AI image: ${(aiImageData.byteLength / 1024).toFixed(2)}KB`);
+        } else if (sizeMB > 10) {
+          // 大图片必须压缩
+          throw new Error(`Image too large (${sizeMB.toFixed(2)}MB) and resizing failed`);
+        }
+      } catch (err) {
+        if (sizeMB > 10) {
+          throw err; // 大图片必须压缩，失败则抛出
+        }
+        console.warn('  AI image generation failed, using original');
+      }
+    }
+    
+    // 5. AI 分析（60秒超时）
+    let analysis;
+    try {
+      analysis = await Promise.race([
+        analyzeImage(aiImageData, env.AI),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('AI timeout (60s)')), 60000)
+        )
+      ]);
+      
+      if (!analysis || !analysis.description) {
+        throw new Error('AI analysis returned invalid result');
+      }
+      
+      analysis.dimensions = dimensions;
+      console.log(`  AI analysis: OK`);
+      
+    } catch (aiError) {
+      console.error('  AI analysis failed:', aiError.message);
+      // AI 分析失败则跳过此图片 ✅
+      return { success: false, error: aiError.message };
+    }
+    
+    // 6. 存储到数据库
+    const slug = generateSlug(analysis.description, imageHash);
+    
+    const insertResult = await env.DB.prepare(
+      'INSERT INTO images (slug, image_url, display_url, image_hash, description, width, height, user_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))'
+    ).bind(
+      slug,
+      finalUrl,
+      displayUrl,
+      imageHash,
+      analysis.description,
+      dimensions.width,
+      dimensions.height,
+      userId
+    ).run();
+    
+    const imageId = insertResult.meta.last_row_id;
+    
+    // 7. 存储标签
+    await storeTags(env.DB, imageId, analysis.tags);
+    
+    console.log(`  Stored: ${slug}`);
+    
+    return { success: true, slug, imageId };
+    
+  } catch (error) {
+    console.error('  Processing error:', error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 存储标签
+ */
+async function storeTags(db, imageId, tagsStructure) {
+  if (!tagsStructure || !tagsStructure.primary) return;
+  
+  for (const primary of tagsStructure.primary || []) {
+    const tagId = await getOrCreateTag(db, primary.name, 1, null);
+    await db.prepare(
+      'INSERT OR REPLACE INTO image_tags (image_id, tag_id, weight, level) VALUES (?, ?, ?, 1)'
+    ).bind(imageId, tagId, primary.weight || 1.0).run();
+
+    if (primary.subcategories) {
+      for (const sub of primary.subcategories) {
+        const subTagId = await getOrCreateTag(db, sub.name, 2, tagId);
+        await db.prepare(
+          'INSERT OR REPLACE INTO image_tags (image_id, tag_id, weight, level) VALUES (?, ?, ?, 2)'
+        ).bind(imageId, subTagId, sub.weight || 1.0).run();
+
+        if (sub.attributes) {
+          for (const attr of sub.attributes) {
+            const attrTagId = await getOrCreateTag(db, attr.name, 3, subTagId);
+            await db.prepare(
+              'INSERT OR REPLACE INTO image_tags (image_id, tag_id, weight, level) VALUES (?, ?, ?, 3)'
+            ).bind(imageId, attrTagId, attr.weight).run();
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * 获取或创建标签
+ */
+async function getOrCreateTag(db, name, level, parentId) {
+  const existing = await db.prepare(
+    'SELECT id FROM tags WHERE name = ? AND level = ?'
+  ).bind(name, level).first();
+  
+  if (existing) return existing.id;
+
+  try {
+    const result = await db.prepare(
+      'INSERT INTO tags (name, level, parent_id) VALUES (?, ?, ?)'
+    ).bind(name, level, parentId).run();
+    return result.meta.last_row_id;
+  } catch (error) {
+    if (error.message.includes('UNIQUE constraint')) {
+      const retry = await db.prepare(
+        'SELECT id FROM tags WHERE name = ? AND level = ?'
+      ).bind(name, level).first();
+      if (retry) return retry.id;
+    }
+    throw error;
   }
 }
