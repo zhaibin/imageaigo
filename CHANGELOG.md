@@ -2,6 +2,87 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v4.2.2] - 2025-10-25
+
+### 🐛 紧急修复 - Unsplash 同步改回队列模式
+
+**问题**: Unsplash 同步改为串行处理后，HTTP 请求超时，只能处理一半图片
+
+**现象**:
+- 手动触发 `/api/admin/unsplash-sync`
+- 处理到 15/30 张就超时停止
+- 剩下的 15 张图片未被处理
+
+**根本原因**:
+- HTTP 请求有 30 秒超时限制
+- 串行处理 30 张图片（下载 + AI 分析）需要 5-10 分钟
+- 在 HTTP 请求中同步处理会超时
+
+**解决方案**:
+
+改回**队列模式**：
+1. **快速预处理**（HTTP 请求中）：
+   - 下载图片
+   - 检查重复（重复直接跳过）✅
+   - 上传到临时 R2
+   - 发送到队列
+   - 整个预处理 < 30 秒
+
+2. **异步 AI 分析**（队列消费者）：
+   - 从临时 R2 获取图片
+   - 生成展示图（1080px WebP）
+   - 生成 AI 分析图（256px JPEG）
+   - AI 分析
+   - 存储到数据库
+
+**处理流程对比**:
+
+| 步骤 | v4.2.1（串行） | v4.2.2（队列） |
+|------|----------------|----------------|
+| 下载 | HTTP 请求中 | HTTP 请求中 |
+| 去重 | HTTP 请求中 ✅ | HTTP 请求中 ✅ |
+| 上传原图 | HTTP 请求中 | 队列中 |
+| 生成展示图 | HTTP 请求中 | 队列中 |
+| AI 分析 | HTTP 请求中 | 队列中 |
+| 存储 | HTTP 请求中 | 队列中 |
+| **总耗时** | **5-10 分钟** ❌ | **< 30 秒** ✅ |
+
+**核心特性保留**:
+- ✅ 重复图片直接跳过（预处理阶段）
+- ✅ 三种图片版本（原图、展示图、AI 图）
+- ✅ 队列中 AI 失败自动跳过
+- ✅ 批次状态实时追踪
+- ✅ 前端进度面板显示
+
+**预期日志**:
+```
+[UnsplashSync] Starting daily sync (queue mode)
+[UnsplashSync] Fetched 30 photos
+[UnsplashSync:1/30] Preprocessing photo-abc
+  Downloaded: 2.5MB
+  Queued for AI analysis
+[UnsplashSync:2/30] Preprocessing photo-def
+  Downloaded: 1.8MB
+  Duplicate: existing-slug, skipped
+[UnsplashSync] Preprocessing done: 15 queued, 13 skipped, 2 failed
+
+队列消费者:
+[QueueConsumer:unsplash_123:0] Processing photo-abc
+  Original: 2.5MB
+  Display: 150KB WebP
+  AI image: 45KB
+  AI analysis: OK
+  ✅ Completed (3.2s)
+```
+
+**部署说明**:
+
+无需额外配置，代码自动生效。
+
+定时任务（每天 0:00 UTC）和手动触发都使用队列模式，避免超时。
+
+---
+
 ## [v4.2.1] - 2025-10-25
 
 ### 🐛 修复 - 恢复任务进度对话框
