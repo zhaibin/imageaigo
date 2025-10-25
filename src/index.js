@@ -468,7 +468,7 @@ export default {
   }
 };
 
-// R2 Image Handler
+// R2 Image Handler with Image Resizing support
 async function handleR2Image(request, env, path) {
   // 处理内部路径和普通路径
   let r2Key;
@@ -506,6 +506,11 @@ async function handleR2Image(request, env, path) {
       return new Response('Image not found', { status: 404 });
     }
 
+    // 解析图片转换参数
+    const url = new URL(request.url);
+    const transformOptions = parseImageTransformOptions(url.searchParams);
+    const needsTransform = Object.keys(transformOptions).length > 0;
+
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set('etag', object.httpEtag);
@@ -533,11 +538,189 @@ async function handleR2Image(request, env, path) {
       headers.set('X-Image-Hash', object.customMetadata.hash);
     }
 
+    // 如果需要图片转换，使用 Cloudflare Image Resizing（带缓存优化）
+    if (needsTransform && object.httpMetadata?.contentType?.startsWith('image/')) {
+      try {
+        // 生成缓存 key
+        const cacheKey = generateTransformCacheKey(r2Key, transformOptions);
+        console.log(`[ImageTransform] Request: ${r2Key}, cache key: ${cacheKey}`);
+        
+        // 🔹 第一级缓存：检查 R2 中是否已有转换缓存
+        const cachedTransformed = await env.R2.get(cacheKey);
+        if (cachedTransformed) {
+          console.log(`[ImageTransform] ✅ Cache HIT from R2: ${cacheKey}`);
+          
+          const cacheHeaders = new Headers();
+          cachedTransformed.writeHttpMetadata(cacheHeaders);
+          cacheHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
+          cacheHeaders.set('CDN-Cache-Control', 'public, max-age=31536000');
+          cacheHeaders.set('X-Content-Source', 'R2-Cached');
+          cacheHeaders.set('X-Image-Resizing', 'cached');
+          cacheHeaders.set('Access-Control-Allow-Origin', '*');
+          cacheHeaders.set('ETag', cachedTransformed.httpEtag || cachedTransformed.etag);
+          
+          return new Response(cachedTransformed.body, { headers: cacheHeaders });
+        }
+        
+        console.log(`[ImageTransform] Cache MISS, transforming: ${cacheKey}`);
+        
+        // 🔹 第二级：执行转换（Image Resizing API）
+        // 构建内部 URL（绕过防盗链检查）
+        const internalUrl = new URL(request.url);
+        internalUrl.pathname = `/internal/r2/${r2Key}`;
+        internalUrl.search = ''; // 清除查询参数，避免循环
+        
+        // 构建 cf.image 选项
+        const cfOptions = {
+          image: {
+            fit: transformOptions.fit || 'contain',
+            quality: transformOptions.quality || 85
+          }
+        };
+        
+        if (transformOptions.width) cfOptions.image.width = transformOptions.width;
+        if (transformOptions.height) cfOptions.image.height = transformOptions.height;
+        if (transformOptions.format) cfOptions.image.format = transformOptions.format;
+        
+        // 使用 fetch 的 cf 参数进行图片转换
+        const transformedResponse = await fetch(internalUrl.toString(), { 
+          cf: cfOptions 
+        });
+        
+        if (transformedResponse.ok) {
+          // 读取转换后的图片数据
+          const transformedData = await transformedResponse.arrayBuffer();
+          
+          // 🔹 第三级：存储转换结果到 R2 缓存（异步，不阻塞响应）
+          const contentType = transformOptions.format ? 
+            getContentTypeFromFormat(transformOptions.format) : 
+            transformedResponse.headers.get('Content-Type') || 'image/jpeg';
+          
+          // 异步存储到 R2（使用 ctx.waitUntil 如果可用，否则不等待）
+          env.R2.put(cacheKey, transformedData, {
+            httpMetadata: { 
+              contentType: contentType,
+              cacheControl: 'public, max-age=31536000, immutable'
+            },
+            customMetadata: {
+              originalKey: r2Key,
+              transformOptions: JSON.stringify(transformOptions),
+              cachedAt: new Date().toISOString()
+            }
+          }).then(() => {
+            console.log(`[ImageTransform] ✅ Cached to R2: ${cacheKey} (${(transformedData.byteLength / 1024).toFixed(2)}KB)`);
+          }).catch(err => {
+            console.warn(`[ImageTransform] Failed to cache to R2:`, err.message);
+          });
+          
+          // 构建响应头
+          const finalHeaders = new Headers();
+          finalHeaders.set('Content-Type', contentType);
+          finalHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
+          finalHeaders.set('CDN-Cache-Control', 'public, max-age=31536000');
+          finalHeaders.set('X-Content-Source', 'R2-Transformed-Fresh');
+          finalHeaders.set('X-Image-Resizing', 'enabled');
+          finalHeaders.set('X-Transform-Options', JSON.stringify(transformOptions));
+          finalHeaders.set('Access-Control-Allow-Origin', '*');
+          finalHeaders.set('Timing-Allow-Origin', '*');
+          
+          console.log('[ImageTransform] ✅ Transform completed, response sent');
+          
+          return new Response(transformedData, { headers: finalHeaders });
+        } else {
+          console.warn('[ImageTransform] Transform failed, returning original');
+          headers.set('X-Image-Resizing', 'fallback');
+          return new Response(object.body, { headers });
+        }
+      } catch (resizeError) {
+        console.error('[ImageTransform] Resize error:', resizeError);
+        // 降级：返回原图
+        headers.set('X-Image-Resizing', 'error');
+        headers.set('X-Transform-Error', resizeError.message);
+        return new Response(object.body, { headers });
+      }
+    }
+
+    // 无需转换，直接返回原图
+    if (needsTransform) {
+      headers.set('X-Image-Resizing', 'not-applicable');
+    }
+    
     return new Response(object.body, { headers });
   } catch (error) {
     console.error('Error serving R2 image:', error);
     return new Response('Error loading image', { status: 500 });
   }
+}
+
+// 解析图片转换参数
+function parseImageTransformOptions(searchParams) {
+  const options = {};
+  
+  // 格式转换
+  const format = searchParams.get('format');
+  if (format && ['webp', 'jpeg', 'jpg', 'png', 'avif'].includes(format)) {
+    options.format = format;
+  }
+  
+  // 宽度
+  const width = parseInt(searchParams.get('width'));
+  if (width && width > 0 && width <= 4096) {
+    options.width = width;
+  }
+  
+  // 高度
+  const height = parseInt(searchParams.get('height'));
+  if (height && height > 0 && height <= 4096) {
+    options.height = height;
+  }
+  
+  // 适配模式
+  const fit = searchParams.get('fit');
+  if (fit && ['cover', 'contain', 'scale-down', 'crop', 'pad'].includes(fit)) {
+    options.fit = fit;
+  }
+  
+  // 质量
+  const quality = parseInt(searchParams.get('quality'));
+  if (quality && quality > 0 && quality <= 100) {
+    options.quality = quality;
+  }
+  
+  return options;
+}
+
+// 生成转换缓存的 R2 key
+function generateTransformCacheKey(originalKey, options) {
+  // 移除 'images/' 前缀（如果有）
+  const cleanKey = originalKey.replace(/^images\//, '');
+  
+  // 构建缓存标识
+  const parts = [];
+  if (options.format) parts.push(`f${options.format}`);
+  if (options.width) parts.push(`w${options.width}`);
+  if (options.height) parts.push(`h${options.height}`);
+  if (options.fit && options.fit !== 'contain') parts.push(`fit${options.fit}`);
+  if (options.quality && options.quality !== 85) parts.push(`q${options.quality}`);
+  
+  const suffix = parts.join('-');
+  
+  // 生成缓存 key: cache/images/xxx-original-fwebp-w800-q85.webp
+  const extension = options.format || 'jpg';
+  return `cache/${originalKey.replace(/\.[^.]+$/, '')}-${suffix}.${extension}`;
+}
+
+// 根据格式获取 Content-Type
+function getContentTypeFromFormat(format) {
+  const contentTypes = {
+    'webp': 'image/webp',
+    'jpeg': 'image/jpeg',
+    'jpg': 'image/jpeg',
+    'png': 'image/png',
+    'avif': 'image/avif',
+    'gif': 'image/gif'
+  };
+  return contentTypes[format] || 'image/jpeg';
 }
 
 // 速率限制检查
@@ -627,7 +810,7 @@ async function handleAnalyze(request, env) {
     const imageFile = formData.get('image');
     const imageUrl = formData.get('url');
 
-    let imageData, originalImageData, finalUrl;
+    let imageData, originalImageData, finalUrl, sourceUrl;
 
     if (imageFile) {
       // 处理上传的文件
@@ -636,6 +819,7 @@ async function handleAnalyze(request, env) {
       }
       
       originalImageData = await imageFile.arrayBuffer();
+      sourceUrl = 'uploaded'; // 文件上传
       console.log(`[Upload] Original image: ${(originalImageData.byteLength / 1024).toFixed(2)}KB`);
       
       // 先上传原图到 R2 临时位置
@@ -646,63 +830,62 @@ async function handleAnalyze(request, env) {
       
       console.log(`[Upload] Uploaded to R2: ${tempKey}`);
       
-      // 生成 AI 分析专用图（256px JPEG）并存储到 R2
+      // 生成 AI 分析专用图（256px JPEG）- 所有图片都压缩
       // 这样只转换一次，后续从 R2 读取，不依赖 Image Resizing 分发
       const sizeMB = originalImageData.byteLength / (1024 * 1024);
       let aiImageKey = null;
-      let imageData = originalImageData; // 默认使用原图
       
-      if (sizeMB > 2) {
-        console.log(`[AI-Image] Large image detected: ${sizeMB.toFixed(2)}MB, generating AI version`);
+      console.log(`[AI-Image] Generating AI analysis version (256px) for ${sizeMB.toFixed(2)}MB image`);
+      
+      try {
+        // 使用 Image Resizing 转换：256px JPEG（所有图片都压缩）
+        const hostname = new URL(request.url).hostname;
+        const publicUrl = `https://${hostname}/r2/${tempKey}`;
         
-        try {
-          // 使用 Image Resizing 转换：256px JPEG
-          const hostname = new URL(request.url).hostname;
-          const publicUrl = `https://${hostname}/r2/${tempKey}`;
-          
-          const aiResponse = await fetch(publicUrl, {
-            cf: {
-              image: {
-                width: 256,
-                height: 256,
-                quality: 80,
-                fit: 'scale-down',
-                format: 'jpeg'
-              }
+        const aiResponse = await fetch(publicUrl, {
+          cf: {
+            image: {
+              width: 256,
+              height: 256,
+              quality: 80,
+              fit: 'scale-down',
+              format: 'jpeg'
             }
+          }
+        });
+        
+        if (aiResponse.ok) {
+          const aiImageData = await aiResponse.arrayBuffer();
+          
+          // 存储 AI 分析图到 R2（后续可复用）
+          const timestamp = Date.now();
+          const randomStr = Math.random().toString(36).substring(2, 8);
+          aiImageKey = `temp/ai-${timestamp}-${randomStr}.jpg`;
+          
+          await env.R2.put(aiImageKey, aiImageData, {
+            httpMetadata: { contentType: 'image/jpeg' },
+            customMetadata: { type: 'ai-analysis', parentKey: tempKey }
           });
           
-          if (aiResponse.ok) {
-            const aiImageData = await aiResponse.arrayBuffer();
-            
-            // 存储 AI 分析图到 R2（后续可复用）
-            const timestamp = Date.now();
-            const randomStr = Math.random().toString(36).substring(2, 8);
-            aiImageKey = `temp/ai-${timestamp}-${randomStr}.jpg`;
-            
-            await env.R2.put(aiImageKey, aiImageData, {
-              httpMetadata: { contentType: 'image/jpeg' },
-              customMetadata: { type: 'ai-analysis', parentKey: tempKey }
-            });
-            
-            imageData = aiImageData;
-            console.log(`[AI-Image] Generated and stored: ${(aiImageData.byteLength / 1024).toFixed(2)}KB → ${aiImageKey}`);
-          } else {
-            throw new Error(`Image Resizing failed: HTTP ${aiResponse.status}`);
-          }
-        } catch (resizeError) {
-          console.warn(`[AI-Image] Image Resizing failed:`, resizeError.message);
-          
-          // 大图片必须压缩
-          if (sizeMB > 10) {
-            await env.R2.delete(tempKey).catch(() => {});
-            throw new Error(`Image too large (${sizeMB.toFixed(2)}MB) and resizing failed. Maximum 10MB without resizing.`);
-          }
-          
-          console.warn(`[AI-Image] Using original (${sizeMB.toFixed(2)}MB) for AI analysis`);
+          imageData = aiImageData;
+          console.log(`[AI-Image] ✅ Compressed: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(aiImageData.byteLength / 1024).toFixed(2)}KB (${((1 - aiImageData.byteLength / originalImageData.byteLength) * 100).toFixed(1)}% reduction)`);
+          console.log(`[ImageData] Using compressed version for AI: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+        } else {
+          throw new Error(`Image Resizing failed: HTTP ${aiResponse.status}`);
         }
-      } else {
-        console.log(`[AI-Image] Small image (${sizeMB.toFixed(2)}MB), using original for AI`);
+      } catch (resizeError) {
+        console.warn(`[AI-Image] Image Resizing failed:`, resizeError.message);
+        
+        // 大图片必须压缩
+        if (sizeMB > 10) {
+          await env.R2.delete(tempKey).catch(() => {});
+          throw new Error(`Image too large (${sizeMB.toFixed(2)}MB) and resizing failed. Maximum 10MB without resizing.`);
+        }
+        
+        // 确保降级到原图
+        imageData = originalImageData;
+        console.warn(`[AI-Image] Fallback: Using original (${sizeMB.toFixed(2)}MB) for AI analysis`);
+        console.log(`[ImageData] Fallback to original: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
       }
       
       // 清理原始临时文件
@@ -734,48 +917,45 @@ async function handleAnalyze(request, env) {
         if (!response.ok) throw new Error(`Failed to fetch image: HTTP ${response.status}`);
         
         originalImageData = await response.arrayBuffer();
+        sourceUrl = imageUrl; // URL 来源
         
         const sizeMB = originalImageData.byteLength / (1024 * 1024);
         if (sizeMB > 20) throw new Error(`Image too large: ${sizeMB.toFixed(2)}MB (max 20MB)`);
         
-        // 使用 Cloudflare Image Resizing 直接从 URL 压缩
-        imageData = originalImageData;
+        // 使用 Cloudflare Image Resizing 直接从 URL 压缩（所有图片都压缩）
+        console.log(`[URL] Generating AI analysis version (256px) for ${sizeMB.toFixed(2)}MB URL image`);
         
-        if (sizeMB > 2) {
-          console.log(`[URL] Large image: ${sizeMB.toFixed(2)}MB, attempting to resize`);
-          
-          try {
-            // AI 分析用：长边 256px
-            const resizedResponse = await fetch(imageUrl, {
-              cf: {
-                image: {
-                  width: 256,
-                  height: 256,
-                  quality: 80,
-                  fit: 'scale-down',
-                  format: 'jpeg'
-                }
+        try {
+          // AI 分析用：长边 256px（所有图片都压缩）
+          const resizedResponse = await fetch(imageUrl, {
+            cf: {
+              image: {
+                width: 256,
+                height: 256,
+                quality: 80,
+                fit: 'scale-down',
+                format: 'jpeg'
               }
-            });
-            
-            if (resizedResponse.ok) {
-              imageData = await resizedResponse.arrayBuffer();
-              console.log(`[Resize] URL image resized: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
-            } else {
-              throw new Error(`Resize failed: HTTP ${resizedResponse.status}`);
             }
-          } catch (resizeError) {
-            console.warn(`[Resize] Failed to resize URL image:`, resizeError.message);
-            
-            // 对于大图片，如果压缩失败，限制大小
-            if (sizeMB > 10) {
-              throw new Error(`Image too large (${sizeMB.toFixed(2)}MB) and resizing failed. Maximum 10MB without resizing.`);
-            }
-            
-            console.warn(`[Resize] Using original image (${sizeMB.toFixed(2)}MB) - this may be slow`);
+          });
+          
+          if (resizedResponse.ok) {
+            imageData = await resizedResponse.arrayBuffer();
+            console.log(`[URL] ✅ Compressed: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB (${((1 - imageData.byteLength / originalImageData.byteLength) * 100).toFixed(1)}% reduction)`);
+          } else {
+            throw new Error(`Resize failed: HTTP ${resizedResponse.status}`);
           }
-        } else {
-          console.log(`[URL] Small image (${sizeMB.toFixed(2)}MB), no resize needed`);
+        } catch (resizeError) {
+          console.warn(`[URL] Image Resizing failed:`, resizeError.message);
+          
+          // 对于大图片，如果压缩失败，限制大小
+          if (sizeMB > 10) {
+            throw new Error(`Image too large (${sizeMB.toFixed(2)}MB) and resizing failed. Maximum 10MB without resizing.`);
+          }
+          
+          // 降级到原图
+          imageData = originalImageData;
+          console.warn(`[URL] Fallback: Using original image (${sizeMB.toFixed(2)}MB)`);
         }
         
         // 验证数据
@@ -800,8 +980,38 @@ async function handleAnalyze(request, env) {
       throw new Error('No image provided (need image file or url)');
     }
 
+    // 详细验证 imageData 有效性
+    console.log('[Validation] Checking imageData:', {
+      isNull: imageData === null,
+      isUndefined: imageData === undefined,
+      type: typeof imageData,
+      constructor: imageData?.constructor?.name,
+      byteLength: imageData?.byteLength
+    });
+    
+    if (!imageData) {
+      console.error('[Analyze] ❌ imageData is null or undefined!');
+      console.error('[Analyze] Debug info:', {
+        hasImageFile: !!imageFile,
+        hasImageUrl: !!imageUrl,
+        originalImageDataSize: originalImageData?.byteLength,
+        finalUrl: finalUrl
+      });
+      throw new Error('Image data is null or undefined. Check upload processing logic.');
+    }
+    
+    if (!(imageData instanceof ArrayBuffer) && !(imageData instanceof Uint8Array)) {
+      console.error('[Analyze] Invalid imageData type:', typeof imageData, imageData?.constructor?.name);
+      throw new Error(`Invalid image data type: ${typeof imageData}. Expected ArrayBuffer or Uint8Array.`);
+    }
+    
+    if (imageData.byteLength === 0) {
+      throw new Error('Image data is empty (0 bytes)');
+    }
+
+    console.log(`[Hash] ✅ imageData valid: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
     const imageHash = await generateHash(imageData);
-    console.log(`[Hash] Generated`);
+    console.log(`[Hash] Generated: ${imageHash.substring(0, 16)}...`);
 
     // Check if image already exists in database (avoid duplicates)
     const existingImage = await env.DB.prepare(
@@ -3694,6 +3904,12 @@ async function handleAdminBatchUpload(request, env, ctx) {
         
         // 读取文件数据
         const imageData = await file.arrayBuffer();
+        
+        // 验证数据
+        if (!imageData || imageData.byteLength === 0) {
+          await updateBatchStatus(env, batchId, index, 'failed', 'Invalid image data', file.name);
+          return;
+        }
         
         // 检查大小
         if (imageData.byteLength > 20 * 1024 * 1024) {

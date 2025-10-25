@@ -68,11 +68,30 @@ export function isValidImageUrl(url) {
 
 /**
  * Generates a SHA-256 hash from data
- * @param {ArrayBuffer} data - Data to hash
+ * @param {ArrayBuffer|Uint8Array|string} data - Data to hash
  * @returns {Promise<string>} Hex string hash
  */
 export async function generateHash(data) {
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  // 确保数据是 ArrayBuffer 或 Uint8Array
+  let buffer;
+  
+  if (data instanceof ArrayBuffer) {
+    buffer = data;
+  } else if (data instanceof Uint8Array) {
+    buffer = data.buffer;
+  } else if (typeof data === 'string') {
+    // 如果是字符串，转换为 ArrayBuffer
+    const encoder = new TextEncoder();
+    buffer = encoder.encode(data).buffer;
+  } else if (data && typeof data === 'object' && data.buffer instanceof ArrayBuffer) {
+    // 处理 TypedArray 类型
+    buffer = data.buffer;
+  } else {
+    console.error('[generateHash] Invalid data type:', typeof data, data);
+    throw new TypeError(`generateHash expects ArrayBuffer, Uint8Array, or string, got ${typeof data}`);
+  }
+  
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
