@@ -315,11 +315,21 @@ async function getBatchStatus(env, batchId) {
 async function updateBatchStatus(env, batchId, fileIndex, status, error = null, currentFile = null) {
   try {
     const statusKey = `batch:${batchId}`;
-    const currentStatus = await env.CACHE.get(statusKey);
     
-    if (!currentStatus) return;
+    // 使用本地缓存，减少 KV 读取和写入频率
+    if (!globalThis.batchStatusCache) {
+      globalThis.batchStatusCache = new Map();
+    }
     
-    const batchStatus = JSON.parse(currentStatus);
+    let batchStatus = globalThis.batchStatusCache.get(statusKey);
+    
+    if (!batchStatus) {
+      const currentStatus = await env.CACHE.get(statusKey);
+      if (!currentStatus) return;
+      batchStatus = JSON.parse(currentStatus);
+      globalThis.batchStatusCache.set(statusKey, batchStatus);
+    }
+    
     batchStatus.files[fileIndex].status = status;
     if (error) {
       batchStatus.files[fileIndex].error = error;
@@ -345,9 +355,14 @@ async function updateBatchStatus(env, batchId, fileIndex, status, error = null, 
       batchStatus.duration = batchStatus.endTime - batchStatus.startTime;
     }
     
-    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+    // 异步更新 KV，不等待完成（避免 429 错误）
+    env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 })
+      .catch(err => {
+        console.warn('[UpdateBatchStatus] KV update failed (non-blocking):', err.message);
+      });
+      
   } catch (err) {
-    console.error('[UpdateBatchStatus] Error:', err);
+    console.error('[UpdateBatchStatus] Error:', err.message);
   }
 }
 

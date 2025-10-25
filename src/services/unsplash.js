@@ -78,10 +78,25 @@ export async function handleUnsplashSync(env) {
     let failed = 0;
     
     // 快速预处理：下载、检查重复、上传到临时存储、发送到队列
-    const preprocessResults = await Promise.allSettled(
-      photos.map(async (photo, index) => {
-        try {
-          console.log(`[UnsplashSync:${index}] Preprocessing ${photo.id}`);
+    // 使用批次处理减少并发，避免 KV 429 错误
+    const batchSize = 10; // 每批10张，减少并发
+    const batches = [];
+    for (let i = 0; i < photos.length; i += batchSize) {
+      batches.push(photos.slice(i, i + batchSize));
+    }
+    
+    let allResults = [];
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      console.log(`[UnsplashSync] Processing batch ${batchIdx + 1}/${batches.length}`);
+      
+      const batchPhotos = batches[batchIdx];
+      const startIndex = batchIdx * batchSize;
+      
+      const batchResults = await Promise.allSettled(
+        batchPhotos.map(async (photo, idx) => {
+          const index = startIndex + idx;
+          try {
+            console.log(`[UnsplashSync:${index}] Preprocessing ${photo.id}`);
           
           // 下载图片
           const imageUrl = photo.urls.regular;
@@ -152,16 +167,26 @@ export async function handleUnsplashSync(env) {
             userId: randomUserId
           });
           
-          console.log(`[UnsplashSync:${index}] Queued: ${photo.id}`);
-          return { status: 'queued', index };
-          
-        } catch (error) {
-          console.error(`[UnsplashSync] Preprocessing failed for ${photo.id}:`, error.message);
-          await updateBatchFileStatus(env, syncBatchId, index, 'failed', error.message);
-          return { status: 'failed', error: error.message };
-        }
-      })
-    );
+            console.log(`[UnsplashSync:${index}] Queued: ${photo.id}`);
+            return { status: 'queued', index };
+            
+          } catch (error) {
+            console.error(`[UnsplashSync] Preprocessing failed for ${photo.id}:`, error.message);
+            await updateBatchFileStatus(env, syncBatchId, index, 'failed', error.message);
+            return { status: 'failed', error: error.message };
+          }
+        })
+      );
+      
+      allResults = allResults.concat(batchResults);
+      
+      // 批次间稍微延迟，避免速率限制
+      if (batchIdx < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+    
+    const preprocessResults = allResults;
     
     // 统计结果
     for (const result of preprocessResults) {
@@ -208,15 +233,25 @@ export async function handleUnsplashSync(env) {
   }
 }
 
-// 更新批次文件状态
+// 更新批次文件状态（优化版本，减少 KV 写入频率）
 async function updateBatchFileStatus(env, batchId, fileIndex, status, error = null) {
   try {
     const statusKey = `batch:${batchId}`;
-    const currentStatus = await env.CACHE.get(statusKey);
     
-    if (!currentStatus) return;
+    // 使用本地缓存，减少 KV 读取
+    if (!globalThis.batchStatusCache) {
+      globalThis.batchStatusCache = new Map();
+    }
     
-    const batchStatus = JSON.parse(currentStatus);
+    let batchStatus = globalThis.batchStatusCache.get(statusKey);
+    
+    if (!batchStatus) {
+      const currentStatus = await env.CACHE.get(statusKey);
+      if (!currentStatus) return;
+      batchStatus = JSON.parse(currentStatus);
+      globalThis.batchStatusCache.set(statusKey, batchStatus);
+    }
+    
     if (batchStatus.files[fileIndex]) {
       batchStatus.files[fileIndex].status = status;
       if (error) {
@@ -231,8 +266,14 @@ async function updateBatchFileStatus(env, batchId, fileIndex, status, error = nu
     batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
     batchStatus.lastActivity = Date.now();
     
-    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+    // 异步更新 KV，不等待完成（避免 429 错误）
+    // 使用 Promise 但不 await，减少并发压力
+    env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 })
+      .catch(err => {
+        console.warn('[UpdateBatchFileStatus] KV update failed (non-blocking):', err.message);
+      });
+    
   } catch (err) {
-    console.error('[UpdateBatchFileStatus] Error:', err);
+    console.error('[UpdateBatchFileStatus] Error:', err.message);
   }
 }
