@@ -3689,6 +3689,7 @@ async function handleAdminBatchUpload(request, env, ctx) {
     };
     
     await env.CACHE.put(`batch:${batchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+    console.log(`[BatchUpload] Batch initialized: ${batchId}, ${files.length} files`);
     
     // 串行预处理：一张一张检查重复 + 上传到临时存储 + 发送到队列
     // 避免超时和并发问题
@@ -3696,6 +3697,22 @@ async function handleAdminBatchUpload(request, env, ctx) {
       let queued = 0;
       let skipped = 0;
       let failed = 0;
+      
+      console.log(`[BatchUpload] Starting preprocessing for batch ${batchId}`);
+      
+      // 立即更新批次活动时间，让前端能立即看到
+      try {
+        const statusKey = `batch:${batchId}`;
+        const currentStatus = await env.CACHE.get(statusKey);
+        if (currentStatus) {
+          const batchStatus = JSON.parse(currentStatus);
+          batchStatus.lastActivity = Date.now();
+          batchStatus.currentFile = 'Starting preprocessing...';
+          await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+        }
+      } catch (err) {
+        console.error('[BatchUpload] Failed to update initial activity:', err);
+      }
       
       for (let index = 0; index < files.length; index++) {
         const file = files[index];
@@ -3759,6 +3776,24 @@ async function handleAdminBatchUpload(request, env, ctx) {
       }
       
       console.log(`[BatchUpload] Preprocessing done: ${queued} queued, ${skipped} skipped, ${failed} failed`);
+      
+      // 如果所有文件都被跳过或失败（没有文件进入队列），标记批次为完成
+      if (queued === 0) {
+        try {
+          const statusKey = `batch:${batchId}`;
+          const currentStatus = await env.CACHE.get(statusKey);
+          if (currentStatus) {
+            const batchStatus = JSON.parse(currentStatus);
+            batchStatus.status = 'completed';
+            batchStatus.endTime = Date.now();
+            batchStatus.duration = batchStatus.endTime - batchStatus.startTime;
+            await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+            console.log(`[BatchUpload] All files skipped/failed, batch marked as completed`);
+          }
+        } catch (err) {
+          console.error('[BatchUpload] Failed to update batch status:', err);
+        }
+      }
     };
     
     // 使用 waitUntil 确保预处理完成

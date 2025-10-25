@@ -53,6 +53,28 @@ export async function handleUnsplashSync(env) {
       return { success: false, error: 'No random users available' };
     }
     
+    // 生成批次ID用于进度追踪
+    const syncBatchId = `unsplash_${Date.now()}`;
+    
+    // 初始化批次状态到 KV（让前端能看到进度）
+    const batchStatus = {
+      batchId: syncBatchId,
+      total: photos.length,
+      completed: 0,
+      failed: 0,
+      skipped: 0,
+      processing: 0,
+      status: 'processing',
+      startTime: Date.now(),
+      lastActivity: Date.now(),
+      currentFile: '',
+      sourceType: 'unsplash',
+      files: photos.map(p => ({ name: `unsplash-${p.id}.jpg`, status: 'pending' }))
+    };
+    
+    await env.CACHE.put(`batch:${syncBatchId}`, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+    console.log(`[UnsplashSync] Batch status initialized: ${syncBatchId}`);
+    
     let completed = 0;
     let skipped = 0;
     let failed = 0;
@@ -64,6 +86,9 @@ export async function handleUnsplashSync(env) {
       
       try {
         console.log(`[UnsplashSync:${photoNum}/${photos.length}] Processing ${photo.id}`);
+        
+        // 更新批次状态：正在处理
+        await updateUnsplashBatchStatus(env, syncBatchId, i, 'processing', null, photo.id);
         
         // 1. 下载图片（10秒超时）
         const imageUrl = photo.urls.regular;
@@ -100,6 +125,7 @@ export async function handleUnsplashSync(env) {
         if (existing) {
           console.log(`[UnsplashSync:${photoNum}] Duplicate: ${existing.slug}, skipped`);
           skipped++;
+          await updateUnsplashBatchStatus(env, syncBatchId, i, 'skipped', `Duplicate: ${existing.slug}`, photo.id);
           continue; // 重复直接跳过，不进行 AI 分析 ✅
         }
         
@@ -115,19 +141,37 @@ export async function handleUnsplashSync(env) {
         if (result.success) {
           console.log(`[UnsplashSync:${photoNum}] ✅ Success: ${result.slug}`);
           completed++;
+          await updateUnsplashBatchStatus(env, syncBatchId, i, 'completed', null, photo.id);
         } else {
           console.warn(`[UnsplashSync:${photoNum}] ❌ AI failed, skipped: ${result.error}`);
           skipped++; // AI 分析失败也跳过 ✅
+          await updateUnsplashBatchStatus(env, syncBatchId, i, 'skipped', `AI failed: ${result.error}`, photo.id);
         }
         
       } catch (error) {
         console.error(`[UnsplashSync:${photoNum}] Error: ${error.message}, skipped`);
         failed++;
+        await updateUnsplashBatchStatus(env, syncBatchId, i, 'failed', error.message, photo.id);
         // 继续处理下一张
       }
     }
     
     console.log(`[UnsplashSync] Completed: ${completed} success, ${skipped} skipped, ${failed} failed`);
+    
+    // 标记批次为完成
+    try {
+      const statusKey = `batch:${syncBatchId}`;
+      const currentStatus = await env.CACHE.get(statusKey);
+      if (currentStatus) {
+        const finalStatus = JSON.parse(currentStatus);
+        finalStatus.status = 'completed';
+        finalStatus.endTime = Date.now();
+        finalStatus.duration = finalStatus.endTime - finalStatus.startTime;
+        await env.CACHE.put(statusKey, JSON.stringify(finalStatus), { expirationTtl: 3600 });
+      }
+    } catch (err) {
+      console.error('[UnsplashSync] Failed to mark batch as completed:', err);
+    }
     
     return {
       success: true,
@@ -135,6 +179,7 @@ export async function handleUnsplashSync(env) {
       skipped,
       failed,
       total: photos.length,
+      batchId: syncBatchId,
       message: `${completed} photos processed, ${skipped} skipped`
     };
     
@@ -362,5 +407,42 @@ async function getOrCreateTag(db, name, level, parentId) {
       if (retry) return retry.id;
     }
     throw error;
+  }
+}
+
+/**
+ * 更新 Unsplash 同步批次状态
+ */
+async function updateUnsplashBatchStatus(env, batchId, fileIndex, status, error = null, photoId = null) {
+  try {
+    const statusKey = `batch:${batchId}`;
+    const currentStatus = await env.CACHE.get(statusKey);
+    
+    if (!currentStatus) return;
+    
+    const batchStatus = JSON.parse(currentStatus);
+    
+    if (batchStatus.files[fileIndex]) {
+      batchStatus.files[fileIndex].status = status;
+      if (error) {
+        batchStatus.files[fileIndex].error = error;
+      }
+    }
+    
+    // 更新计数
+    batchStatus.completed = batchStatus.files.filter(f => f.status === 'completed').length;
+    batchStatus.failed = batchStatus.files.filter(f => f.status === 'failed').length;
+    batchStatus.skipped = batchStatus.files.filter(f => f.status === 'skipped').length;
+    batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
+    
+    // 更新最后活动时间和当前文件
+    batchStatus.lastActivity = Date.now();
+    if (photoId) {
+      batchStatus.currentFile = `unsplash-${photoId}.jpg`;
+    }
+    
+    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+  } catch (err) {
+    console.error(`[UpdateUnsplashBatchStatus] Error:`, err);
   }
 }
