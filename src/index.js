@@ -650,7 +650,7 @@ async function handleAnalyze(request, env) {
       // 这样只转换一次，后续从 R2 读取，不依赖 Image Resizing 分发
       const sizeMB = originalImageData.byteLength / (1024 * 1024);
       let aiImageKey = null;
-      let imageData = originalImageData; // 默认使用原图
+      imageData = originalImageData; // 默认使用原图（使用外部变量）
       
       if (sizeMB > 2) {
         console.log(`[AI-Image] Large image detected: ${sizeMB.toFixed(2)}MB, generating AI version`);
