@@ -36,7 +36,7 @@ export function buildProfilePage(user, userImages, isOwnProfile = false) {
   const imagesHtml = userImages.map(img => `
     <div class="image-card">
       <a href="/image/${img.slug}">
-        <img src="${img.image_url}" alt="${img.description || 'Image'}" loading="lazy">
+        <img src="${img.display_url || img.image_url}" alt="${img.description || 'Image'}" loading="lazy">
       </a>
       <div class="image-info">
         <p class="description">${img.description || 'No description'}</p>

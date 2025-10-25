@@ -874,7 +874,9 @@ export function buildAdminDashboard() {
         
         let row = '<tr id="image-row-' + img.id + '">';
         row += '<td>#' + img.id + '</td>';
-        row += '<td><img src="' + escapeHtml(img.image_url) + '" class="img-preview" onclick="showImageDetail(' + img.id + ')" loading="lazy" alt="Image ' + img.id + '"></td>';
+        // 使用展示图以提升加载速度
+        const displayUrl = img.display_url || img.image_url;
+        row += '<td><img src="' + escapeHtml(displayUrl) + '" class="img-preview" onclick="showImageDetail(' + img.id + ')" loading="lazy" alt="Image ' + img.id + '"></td>';
         row += '<td style="max-width:250px;">' + escapeHtml(shortDesc) + '</td>';
         row += '<td style="max-width:150px;"><div style="display:flex;flex-wrap:wrap;gap:4px;">' + tagsHTML + '</div></td>';
         row += '<td>' + (img.width && img.height ? img.width + '×' + img.height : '-') + '</td>';
@@ -917,7 +919,13 @@ export function buildAdminDashboard() {
       const tags = data.tags || [];
       
       let modalContent = '<div style="margin-bottom: 20px;">';
+      // 详情查看显示原图
       modalContent += '<img src="' + escapeHtml(img.image_url) + '" style="width: 100%; border-radius: 8px;" alt="' + escapeHtml(img.description || 'Image') + '" />';
+      modalContent += '<p style="margin-top:10px; font-size:0.85rem; color:#666;">Original: <a href="' + escapeHtml(img.image_url) + '" target="_blank">View Full Size</a>';
+      if (img.display_url && img.display_url !== img.image_url) {
+        modalContent += ' | Display: <a href="' + escapeHtml(img.display_url) + '" target="_blank">WebP Version</a>';
+      }
+      modalContent += '</p>';
       modalContent += '</div>';
       modalContent += '<div style="margin-bottom: 15px;">';
       modalContent += '<strong>ID:</strong> #' + img.id;
@@ -1020,7 +1028,9 @@ export function buildAdminDashboard() {
         const row = document.getElementById('image-row-' + imageId);
         if (!row) return;
         
-        const imgUrl = escapeHtml(img.image_url || '');
+        // 使用展示图以提升加载速度
+        const displayUrl = img.display_url || img.image_url;
+        const imgUrl = escapeHtml(displayUrl || '');
         const imgDesc = escapeHtml(img.description || '-');
         const shortDesc = imgDesc.length > 70 ? imgDesc.substring(0, 70) + '...' : imgDesc;
         const imgSize = (img.width && img.height) ? (img.width + '×' + img.height) : '-';

@@ -716,8 +716,9 @@ function getClientScript() {
                 img.style.minHeight = '200px';
             }
             
-            // 使用 data-src 延迟加载
-            img.dataset.src = image.image_url;
+            // 使用 data-src 延迟加载（优先使用展示图）
+            const displayUrl = image.display_url || image.image_url;
+            img.dataset.src = displayUrl;
             img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"%3E%3C/svg%3E';
             
             // Intersection Observer 懒加载
@@ -737,11 +738,13 @@ function getClientScript() {
                 });
                 observer.observe(img);
             } else {
-                // 降级方案：直接加载
-                img.src = image.image_url;
+                // 降级方案：直接加载（优先使用展示图）
+                const displayUrl = image.display_url || image.image_url;
+                img.src = displayUrl;
             }
         } else {
-            img.src = image.image_url;
+            const displayUrl = image.display_url || image.image_url;
+            img.src = displayUrl;
         }
         
         // 图片加载完成后的优化处理
@@ -859,6 +862,7 @@ function getClientScript() {
             const modalDescription = document.getElementById('modalDescription');
             const modalTags = document.getElementById('modalTags');
 
+            // 模态框显示原图（点击查看大图）
             if (modalImage) modalImage.src = image.image_url;
             if (modalDescription) modalDescription.textContent = image.description;
 
@@ -1638,7 +1642,8 @@ export function buildPageTemplate({ title, description, heading, subtitle, conte
         link.href = '/image/' + image.slug;
         
         const img = document.createElement('img');
-        img.src = image.image_url;
+        // 使用展示图而非原图（更快加载）
+        img.src = image.display_url || image.image_url;
         // 优化的 alt 标签 - 包含描述和关键标签
         const imgTags = (Array.isArray(image.tags) && image.tags.length > 0) ? 
           image.tags.slice(0, 3).map(t => t.name).join(', ') : '';

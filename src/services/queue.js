@@ -84,10 +84,11 @@ async function processQueueMessage(message, env) {
       return;
     }
     
-    // 上传到永久存储
+    // 上传原图到永久存储
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 8);
-    const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
+    const baseKey = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}`;
+    const r2Key = `${baseKey}-original.jpg`;
     
     await Promise.race([
       env.R2.put(r2Key, imageData, {
@@ -99,7 +100,8 @@ async function processQueueMessage(message, env) {
           uploadedAt: new Date().toISOString(),
           hash: imageHash,
           sourceUrl: metadata.sourceUrl || 'batch-upload',
-          originalName: fileName
+          originalName: fileName,
+          type: 'original'
         }
       }),
       new Promise((_, reject) => 
@@ -108,6 +110,7 @@ async function processQueueMessage(message, env) {
     ]);
     
     const finalUrl = `/r2/${r2Key}`;
+    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Uploaded original: ${r2Key}`);
     
     // 获取图片尺寸（从原图）
     const dimensions = await Promise.race([
@@ -154,8 +157,19 @@ async function processQueueMessage(message, env) {
     
     analysis.dimensions = dimensions;
     
-    // 存储到数据库（带 userId）
-    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis, userId);
+    // 生成展示图（1080px WebP）如果需要
+    let displayUrl = finalUrl; // 默认使用原图
+    const maxDimension = Math.max(dimensions.width, dimensions.height);
+    
+    if (maxDimension > 1080) {
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Generating display version (${maxDimension}px > 1080px)`);
+      // 这里暂时使用原图，等 Image Resizing 完全配置后再启用生成
+      // TODO: 使用 Image Resizing 生成 1080px WebP
+      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Display image generation not yet implemented in queue`);
+    }
+    
+    // 存储到数据库（带 userId 和 displayUrl）
+    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, displayUrl, imageHash, analysis, userId);
     
     // 删除临时文件
     await env.R2.delete(tempKey).catch(err => 
@@ -251,19 +265,20 @@ async function updateBatchStatus(env, batchId, fileIndex, status, error = null, 
   }
 }
 
-async function storeImageAnalysis(db, imageUrl, imageHash, analysis, userId = null) {
+async function storeImageAnalysis(db, imageUrl, displayUrl, imageHash, analysis, userId = null) {
   const { description, tags, dimensions } = analysis;
   
   // 生成 slug
   const slug = await generateSlug(description, db);
   
-  // 插入图片记录
+  // 插入图片记录（包含 display_url）
   const result = await db.prepare(`
-    INSERT INTO images (slug, image_url, image_hash, description, width, height, user_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO images (slug, image_url, display_url, image_hash, description, width, height, user_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).bind(
     slug,
     imageUrl,
+    displayUrl,
     imageHash,
     description,
     dimensions?.width || null,

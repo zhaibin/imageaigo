@@ -664,12 +664,13 @@ async function handleAnalyze(request, env) {
           
           console.log(`[Resize] Attempting Image Resizing via: ${publicUrl}`);
           
+          // AI 分析用：长边 256px
           const resizedResponse = await fetch(publicUrl, {
             cf: {
               image: {
-                width: 512,
-                height: 512,
-                quality: 85,
+                width: 256,
+                height: 256,
+                quality: 80,
                 fit: 'scale-down',
                 format: 'jpeg'
               }
@@ -739,12 +740,13 @@ async function handleAnalyze(request, env) {
           console.log(`[URL] Large image: ${sizeMB.toFixed(2)}MB, attempting to resize`);
           
           try {
+            // AI 分析用：长边 256px
             const resizedResponse = await fetch(imageUrl, {
               cf: {
                 image: {
-                  width: 512,
-                  height: 512,
-                  quality: 85,
+                  width: 256,
+                  height: 256,
+                  quality: 80,
                   fit: 'scale-down',
                   format: 'jpeg'
                 }
@@ -824,10 +826,11 @@ async function handleAnalyze(request, env) {
       // Even with cache, we need to store it as a new entry
     }
 
-    // Upload to R2
+    // Upload original image to R2
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 8);
-    const r2Key = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}.jpg`;
+    const baseKey = `images/${timestamp}-${randomStr}-${imageHash.substring(0, 12)}`;
+    const r2Key = `${baseKey}-original.jpg`;
 
     try {
       await env.R2.put(r2Key, originalImageData, {
@@ -835,19 +838,71 @@ async function handleAnalyze(request, env) {
         customMetadata: {
           uploadedAt: new Date().toISOString(),
           hash: imageHash,
-          sourceUrl: sourceUrl || 'uploaded'
+          sourceUrl: sourceUrl || 'uploaded',
+          type: 'original'
         }
       });
-      console.log(`[R2] Uploaded: ${r2Key}`);
+      console.log(`[R2] Uploaded original: ${r2Key}`);
       finalUrl = `/r2/${r2Key}`;
     } catch (error) {
       console.error('[R2] Upload failed:', error.message);
       finalUrl = `data:image/jpeg;base64,${arrayBufferToBase64(originalImageData)}`;
     }
-
-    // Get original image dimensions (not from compressed image)
+    
+    // Get original image dimensions
     const originalDimensions = await getImageDimensions(originalImageData);
     console.log(`[Dimensions] Original image: ${originalDimensions.width}x${originalDimensions.height}`);
+    const maxDimension = Math.max(originalDimensions.width, originalDimensions.height);
+    
+    // Generate and upload display image (1080px WebP) if needed
+    let displayUrl = finalUrl; // 默认使用原图
+    
+    if (maxDimension > 1080) {
+      console.log(`[Display] Image ${maxDimension}px > 1080px, generating display version`);
+      
+      try {
+        const hostname = new URL(request.url).hostname;
+        const originalUrl = `https://${hostname}${finalUrl}`;
+        
+        // 生成展示图：长边 1080px，WebP 格式
+        const displayResponse = await fetch(originalUrl, {
+          cf: {
+            image: {
+              width: 1080,
+              height: 1080,
+              quality: 85,
+              fit: 'scale-down',
+              format: 'webp'
+            }
+          }
+        });
+        
+        if (displayResponse.ok) {
+          const displayImageData = await displayResponse.arrayBuffer();
+          const displayKey = `${baseKey}-display.webp`;
+          
+          await env.R2.put(displayKey, displayImageData, {
+            httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000' },
+            customMetadata: {
+              uploadedAt: new Date().toISOString(),
+              hash: imageHash,
+              type: 'display',
+              originalKey: r2Key
+            }
+          });
+          
+          displayUrl = `/r2/${displayKey}`;
+          console.log(`[Display] Generated: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP`);
+        } else {
+          console.warn(`[Display] Failed to generate: HTTP ${displayResponse.status}, using original`);
+        }
+      } catch (displayError) {
+        console.warn(`[Display] Error generating display image:`, displayError.message);
+        console.log(`[Display] Using original image for display`);
+      }
+    } else {
+      console.log(`[Display] Image ${maxDimension}px <= 1080px, using original for display`);
+    }
 
     // AI Analysis (uses compressed image for efficiency)
     const analysis = await analyzeImage(imageData, env.AI);
@@ -856,9 +911,9 @@ async function handleAnalyze(request, env) {
     // Override dimensions with original image dimensions
     analysis.dimensions = originalDimensions;
 
-    // Store in database with user_id
-    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, imageHash, analysis, auth.user.id);
-    console.log(`[DB] Stored with slug: ${slug}, user_id: ${auth.user.id}`);
+    // Store in database with user_id, including display_url
+    const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, displayUrl, imageHash, analysis, auth.user.id);
+    console.log(`[DB] Stored with slug: ${slug}, user_id: ${auth.user.id}, display_url: ${displayUrl}`);
 
     // Cache
     const cacheData = { imageId, slug, ...analysis };
@@ -2197,7 +2252,7 @@ async function handleSearchPage(request, env) {
 }
 
 // Database functions
-async function storeImageAnalysis(db, imageUrl, imageHash, analysis, userId = null) {
+async function storeImageAnalysis(db, imageUrl, displayUrl, imageHash, analysis, userId = null) {
   const existing = await db.prepare('SELECT id, slug FROM images WHERE image_hash = ?').bind(imageHash).first();
 
   let imageId, slug;
@@ -2207,14 +2262,15 @@ async function storeImageAnalysis(db, imageUrl, imageHash, analysis, userId = nu
   if (existing) {
     imageId = existing.id;
     slug = existing.slug;
-    await db.prepare('UPDATE images SET description = ?, width = ?, height = ?, analyzed_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .bind(analysis.description, width, height, imageId).run();
+    // 更新现有记录，包括 display_url
+    await db.prepare('UPDATE images SET description = ?, width = ?, height = ?, display_url = ?, analyzed_at = CURRENT_TIMESTAMP WHERE id = ?')
+      .bind(analysis.description, width, height, displayUrl, imageId).run();
   } else {
     // 生成唯一slug
     slug = generateSlug(analysis.description, imageHash);
     const result = await db.prepare(
-      'INSERT INTO images (image_url, image_hash, slug, description, width, height, user_id, analyzed_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
-    ).bind(imageUrl, imageHash, slug, analysis.description, width, height, userId).run();
+      'INSERT INTO images (image_url, display_url, image_hash, slug, description, width, height, user_id, analyzed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+    ).bind(imageUrl, displayUrl, imageHash, slug, analysis.description, width, height, userId).run();
     imageId = result.meta.last_row_id;
   }
 
