@@ -17,48 +17,44 @@ export async function resizeImage(imageData, options = {}) {
     format = 'jpeg'
   } = options;
 
+  // 验证输入
+  if (!imageData || imageData.byteLength === 0) {
+    throw new Error('Invalid image data provided to resizeImage');
+  }
+
   try {
-    // 方案 1: 使用 Cloudflare Image Resizing (需要 Paid Plan)
-    // 这里我们使用一个模拟的实现，如果有 Image Resizing 功能可以直接使用
+    // 当前实现：直接使用降级方案（返回原图）
+    // 原因：Cloudflare Image Resizing 需要 Workers Paid Plan 和 R2 URL
+    // 
+    // 如果需要启用真正的压缩，有两个选项：
+    // 1. 启用 Workers Paid Plan + Image Resizing，通过 R2 URL 处理
+    // 2. 使用 WASM 图片处理库（如 @cf/image）
     
-    // 创建一个 Response 对象包含原始图片
-    const imageResponse = new Response(imageData, {
-      headers: {
-        'Content-Type': 'image/jpeg'
-      }
-    });
-
-    // 尝试使用 Cloudflare Image Resizing
-    // 注意：这需要在 wrangler.toml 中启用 image_resizing
-    try {
-      // 如果可用，使用 cf.image 选项
-      const resizedResponse = await fetch(imageResponse.url || 'data:image/jpeg;base64,...', {
-        cf: {
-          image: {
-            width: maxWidth,
-            height: maxHeight,
-            quality: quality,
-            format: format,
-            fit: 'scale-down' // 保持宽高比
-          }
-        }
-      });
-
-      if (resizedResponse.ok) {
-        console.log('[ImageResize] Successfully resized using Cloudflare Image Resizing');
-        return await resizedResponse.arrayBuffer();
-      }
-    } catch (cfError) {
-      console.log('[ImageResize] Cloudflare Image Resizing not available, using fallback');
+    console.log('[ImageResize] Processing image (resizing requires Paid Plan, using original)');
+    
+    // 获取图片尺寸信息
+    const dimensions = await getImageDimensions(imageData);
+    console.log(`[ImageResize] Image dimensions: ${dimensions.width}x${dimensions.height}, size: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+    
+    // 如果图片已经很小，直接返回
+    if (dimensions.width <= maxWidth && dimensions.height <= maxHeight) {
+      console.log('[ImageResize] Image already within size limits, no resize needed');
+      return imageData;
     }
-
-    // 方案 2: 使用简单的降采样（降级方案）
-    // 实际生产环境建议使用 wasm-based 图片处理库
-    return await simpleResize(imageData, maxWidth, maxHeight, quality);
+    
+    // 对于大图片，仍然返回原图但记录警告
+    // 这样可以确保 AI 分析正常工作
+    const sizeMB = imageData.byteLength / (1024 * 1024);
+    console.log(`[ImageResize] Large image (${dimensions.width}x${dimensions.height}, ${sizeMB.toFixed(2)}MB) will be used as-is`);
+    console.log('[ImageResize] Tip: Enable Cloudflare Image Resizing (Paid Plan) for automatic optimization');
+    
+    return imageData;
 
   } catch (error) {
-    console.error('[ImageResize] Error resizing image:', error);
-    throw new Error('Failed to resize image: ' + error.message);
+    console.error('[ImageResize] Error processing image:', error);
+    // 即使出错，也返回原图，避免分析失败
+    console.log('[ImageResize] Falling back to original image due to error');
+    return imageData;
   }
 }
 

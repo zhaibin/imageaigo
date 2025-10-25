@@ -637,7 +637,12 @@ async function handleAnalyze(request, env) {
         quality: 80
       });
       
-      console.log(`[Resize] Compressed for AI: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+      // 验证压缩后的数据
+      if (!imageData || imageData.byteLength === 0) {
+        throw new Error('Image resizing failed: result is empty');
+      }
+      
+      console.log(`[Resize] Image ready for AI: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
       finalUrl = `pending_r2`;
       
     } else if (imageUrl) {
@@ -664,7 +669,12 @@ async function handleAnalyze(request, env) {
           quality: 80
         });
         
-        console.log(`[Resize] URL image compressed: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+        // 验证压缩后的数据
+        if (!imageData || imageData.byteLength === 0) {
+          throw new Error('Image resizing failed: result is empty');
+        }
+        
+        console.log(`[Resize] URL image ready: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
         finalUrl = imageUrl;
         
       } catch (error) {

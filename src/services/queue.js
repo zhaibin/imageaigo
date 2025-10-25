@@ -125,7 +125,12 @@ async function processQueueMessage(message, env) {
       quality: 80
     });
     
-    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Compressed: ${(imageData.byteLength / 1024).toFixed(2)}KB → ${(compressedImageData.byteLength / 1024).toFixed(2)}KB`);
+    // 验证压缩后的数据
+    if (!compressedImageData || compressedImageData.byteLength === 0) {
+      throw new Error('Image resizing failed: result is empty');
+    }
+    
+    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Image ready: ${(imageData.byteLength / 1024).toFixed(2)}KB → ${(compressedImageData.byteLength / 1024).toFixed(2)}KB`);
     
     // AI 分析（使用压缩图，带超时保护）
     const analysis = await Promise.race([
