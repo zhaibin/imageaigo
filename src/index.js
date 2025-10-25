@@ -646,26 +646,21 @@ async function handleAnalyze(request, env) {
       
       console.log(`[Upload] Uploaded to R2: ${tempKey}`);
       
-      // 使用 Cloudflare Image Resizing（如果可用）
-      // 注意：Image Resizing 需要可公开访问的 URL
-      // 由于我们的 R2 对象可能无法通过内部 URL 访问，我们先尝试，失败则使用降级方案
-      
-      let imageData = originalImageData;
+      // 生成 AI 分析专用图（256px JPEG）并存储到 R2
+      // 这样只转换一次，后续从 R2 读取，不依赖 Image Resizing 分发
       const sizeMB = originalImageData.byteLength / (1024 * 1024);
+      let aiImageKey = null;
+      let imageData = originalImageData; // 默认使用原图
       
-      // 如果图片太大，必须压缩
       if (sizeMB > 2) {
-        console.log(`[Resize] Large image detected: ${sizeMB.toFixed(2)}MB, attempting to resize`);
+        console.log(`[AI-Image] Large image detected: ${sizeMB.toFixed(2)}MB, generating AI version`);
         
         try {
-          // 尝试使用 Image Resizing
+          // 使用 Image Resizing 转换：256px JPEG
           const hostname = new URL(request.url).hostname;
           const publicUrl = `https://${hostname}/r2/${tempKey}`;
           
-          console.log(`[Resize] Attempting Image Resizing via: ${publicUrl}`);
-          
-          // AI 分析用：长边 256px
-          const resizedResponse = await fetch(publicUrl, {
+          const aiResponse = await fetch(publicUrl, {
             cf: {
               image: {
                 width: 256,
@@ -677,30 +672,40 @@ async function handleAnalyze(request, env) {
             }
           });
           
-          if (resizedResponse.ok) {
-            imageData = await resizedResponse.arrayBuffer();
-            console.log(`[Resize] Success: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+          if (aiResponse.ok) {
+            const aiImageData = await aiResponse.arrayBuffer();
+            
+            // 存储 AI 分析图到 R2（后续可复用）
+            const timestamp = Date.now();
+            const randomStr = Math.random().toString(36).substring(2, 8);
+            aiImageKey = `temp/ai-${timestamp}-${randomStr}.jpg`;
+            
+            await env.R2.put(aiImageKey, aiImageData, {
+              httpMetadata: { contentType: 'image/jpeg' },
+              customMetadata: { type: 'ai-analysis', parentKey: tempKey }
+            });
+            
+            imageData = aiImageData;
+            console.log(`[AI-Image] Generated and stored: ${(aiImageData.byteLength / 1024).toFixed(2)}KB → ${aiImageKey}`);
           } else {
-            throw new Error(`Resize failed: HTTP ${resizedResponse.status}`);
+            throw new Error(`Image Resizing failed: HTTP ${aiResponse.status}`);
           }
         } catch (resizeError) {
-          console.warn(`[Resize] Image Resizing failed:`, resizeError.message);
+          console.warn(`[AI-Image] Image Resizing failed:`, resizeError.message);
           
-          // 对于大图片，如果压缩失败，限制大小
+          // 大图片必须压缩
           if (sizeMB > 10) {
-            // 清理临时文件
             await env.R2.delete(tempKey).catch(() => {});
             throw new Error(`Image too large (${sizeMB.toFixed(2)}MB) and resizing failed. Maximum 10MB without resizing.`);
           }
           
-          // 对于 2-10MB 的图片，发出警告但继续
-          console.warn(`[Resize] Using large original image (${sizeMB.toFixed(2)}MB) - this may be slow`);
+          console.warn(`[AI-Image] Using original (${sizeMB.toFixed(2)}MB) for AI analysis`);
         }
       } else {
-        console.log(`[Resize] Small image (${sizeMB.toFixed(2)}MB), no resize needed`);
+        console.log(`[AI-Image] Small image (${sizeMB.toFixed(2)}MB), using original for AI`);
       }
       
-      // 清理临时文件
+      // 清理原始临时文件
       await env.R2.delete(tempKey).catch(err => 
         console.warn(`[Cleanup] Failed to delete temp file:`, err.message)
       );
@@ -710,7 +715,7 @@ async function handleAnalyze(request, env) {
         throw new Error('Image processing failed: result is empty');
       }
       
-      // 最终大小检查（AI 分析限制）
+      // 最终大小检查
       const finalSizeMB = imageData.byteLength / (1024 * 1024);
       if (finalSizeMB > 10) {
         throw new Error(`Image too large for AI analysis: ${finalSizeMB.toFixed(2)}MB (max 10MB)`);
@@ -907,6 +912,14 @@ async function handleAnalyze(request, env) {
     // AI Analysis (uses compressed image for efficiency)
     const analysis = await analyzeImage(imageData, env.AI);
     console.log(`[AI] Analysis completed`);
+    
+    // 清理 AI 临时图片（如果生成了）
+    if (aiImageKey) {
+      await env.R2.delete(aiImageKey).catch(err => 
+        console.warn(`[Cleanup] Failed to delete AI temp file:`, err.message)
+      );
+      console.log(`[Cleanup] Deleted AI temp image: ${aiImageKey}`);
+    }
 
     // Override dimensions with original image dimensions
     analysis.dimensions = originalDimensions;
