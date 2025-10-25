@@ -120,22 +120,61 @@ async function processQueueMessage(message, env) {
       )
     ]);
     
-    // 使用 Cloudflare Image Resizing 压缩大图片
+    // 生成 AI 分析专用图（256px JPEG）
     let compressedImageData = imageData;
+    let aiImageKey = null;
     const sizeMB = imageData.byteLength / (1024 * 1024);
     
     if (sizeMB > 2) {
-      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Large image: ${sizeMB.toFixed(2)}MB, attempting resize`);
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Large image: ${sizeMB.toFixed(2)}MB, generating AI version`);
       
-      // 注意：这里不能直接使用内部 URL，需要等待 Image Resizing 功能完全配置
-      // 暂时使用原图，但添加大小限制
-      if (sizeMB > 10) {
-        throw new Error(`Image too large: ${sizeMB.toFixed(2)}MB (max 10MB for AI analysis)`);
+      try {
+        // 使用 Image Resizing 转换 AI 分析图
+        const hostname = 'imageaigo.cc'; // 使用主域名
+        const publicUrl = `https://${hostname}${finalUrl}`;
+        
+        const aiResponse = await fetch(publicUrl, {
+          cf: {
+            image: {
+              width: 256,
+              height: 256,
+              quality: 80,
+              fit: 'scale-down',
+              format: 'jpeg'
+            }
+          }
+        });
+        
+        if (aiResponse.ok) {
+          const aiImageData = await aiResponse.arrayBuffer();
+          
+          // 存储 AI 分析图到 R2（临时）
+          const aiTimestamp = Date.now();
+          const aiRandomStr = Math.random().toString(36).substring(2, 8);
+          aiImageKey = `temp/ai-${aiTimestamp}-${aiRandomStr}.jpg`;
+          
+          await env.R2.put(aiImageKey, aiImageData, {
+            httpMetadata: { contentType: 'image/jpeg' },
+            customMetadata: { type: 'ai-analysis', parentKey: r2Key }
+          });
+          
+          compressedImageData = aiImageData;
+          console.log(`[QueueConsumer:${batchId}:${fileIndex}] AI image generated: ${(aiImageData.byteLength / 1024).toFixed(2)}KB`);
+        } else {
+          throw new Error(`Image Resizing failed: HTTP ${aiResponse.status}`);
+        }
+      } catch (resizeError) {
+        console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Image Resizing failed:`, resizeError.message);
+        
+        // 大图片必须压缩
+        if (sizeMB > 10) {
+          throw new Error(`Image too large: ${sizeMB.toFixed(2)}MB (max 10MB for AI analysis)`);
+        }
+        
+        console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Using original (${sizeMB.toFixed(2)}MB) for AI analysis`);
       }
-      
-      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Using original image (${sizeMB.toFixed(2)}MB) - Image Resizing not configured`);
     } else {
-      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Small image: ${sizeMB.toFixed(2)}MB, no resize needed`);
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Small image: ${sizeMB.toFixed(2)}MB, using original for AI`);
     }
     
     // 验证数据
@@ -163,18 +202,65 @@ async function processQueueMessage(message, env) {
     
     if (maxDimension > 1080) {
       console.log(`[QueueConsumer:${batchId}:${fileIndex}] Generating display version (${maxDimension}px > 1080px)`);
-      // 这里暂时使用原图，等 Image Resizing 完全配置后再启用生成
-      // TODO: 使用 Image Resizing 生成 1080px WebP
-      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Display image generation not yet implemented in queue`);
+      
+      try {
+        const hostname = 'imageaigo.cc';
+        const publicUrl = `https://${hostname}${finalUrl}`;
+        
+        // 生成展示图：长边 1080px，WebP 格式
+        const displayResponse = await fetch(publicUrl, {
+          cf: {
+            image: {
+              width: 1080,
+              height: 1080,
+              quality: 85,
+              fit: 'scale-down',
+              format: 'webp'
+            }
+          }
+        });
+        
+        if (displayResponse.ok) {
+          const displayImageData = await displayResponse.arrayBuffer();
+          const displayKey = `${baseKey}-display.webp`;
+          
+          await env.R2.put(displayKey, displayImageData, {
+            httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000' },
+            customMetadata: {
+              uploadedAt: new Date().toISOString(),
+              hash: imageHash,
+              type: 'display',
+              originalKey: r2Key
+            }
+          });
+          
+          displayUrl = `/r2/${displayKey}`;
+          console.log(`[QueueConsumer:${batchId}:${fileIndex}] Display generated: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP`);
+        } else {
+          console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Display generation failed: HTTP ${displayResponse.status}`);
+        }
+      } catch (displayError) {
+        console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Display error:`, displayError.message);
+      }
+    } else {
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Image ${maxDimension}px <= 1080px, using original for display`);
     }
     
     // 存储到数据库（带 userId 和 displayUrl）
     const { imageId, slug } = await storeImageAnalysis(env.DB, finalUrl, displayUrl, imageHash, analysis, userId);
     
-    // 删除临时文件
+    // 清理临时文件
     await env.R2.delete(tempKey).catch(err => 
       console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Failed to delete temp file:`, err.message)
     );
+    
+    // 清理 AI 临时图片（如果生成了）
+    if (aiImageKey) {
+      await env.R2.delete(aiImageKey).catch(err => 
+        console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Failed to delete AI temp file:`, err.message)
+      );
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Deleted AI temp image: ${aiImageKey}`);
+    }
     
     const duration = Date.now() - startTime;
     console.log(`[QueueConsumer:${batchId}:${fileIndex}] Success: ${slug} (${duration}ms)`);
