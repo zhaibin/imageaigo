@@ -627,7 +627,7 @@ async function handleAnalyze(request, env) {
     const imageFile = formData.get('image');
     const imageUrl = formData.get('url');
 
-    let imageData, originalImageData, finalUrl;
+    let imageData, originalImageData, finalUrl, aiImageKey = null;
 
     if (imageFile) {
       // 处理上传的文件
@@ -649,7 +649,6 @@ async function handleAnalyze(request, env) {
       // 生成 AI 分析专用图（256px JPEG）并存储到 R2
       // 这样只转换一次，后续从 R2 读取，不依赖 Image Resizing 分发
       const sizeMB = originalImageData.byteLength / (1024 * 1024);
-      let aiImageKey = null;
       imageData = originalImageData; // 默认使用原图（使用外部变量）
       
       if (sizeMB > 2) {
@@ -843,7 +842,6 @@ async function handleAnalyze(request, env) {
         customMetadata: {
           uploadedAt: new Date().toISOString(),
           hash: imageHash,
-          sourceUrl: sourceUrl || 'uploaded',
           type: 'original'
         }
       });
@@ -866,40 +864,45 @@ async function handleAnalyze(request, env) {
       console.log(`[Display] Image ${maxDimension}px > 1080px, generating display version`);
       
       try {
-        const hostname = new URL(request.url).hostname;
-        const originalUrl = `https://${hostname}${finalUrl}`;
-        
-        // 生成展示图：长边 1080px，WebP 格式
-        const displayResponse = await fetch(originalUrl, {
-          cf: {
-            image: {
-              width: 1080,
-              height: 1080,
-              quality: 85,
-              fit: 'scale-down',
-              format: 'webp'
-            }
-          }
-        });
-        
-        if (displayResponse.ok) {
-          const displayImageData = await displayResponse.arrayBuffer();
-          const displayKey = `${baseKey}-display.webp`;
+        // 如果 finalUrl 是 base64，跳过生成展示图
+        if (finalUrl.startsWith('data:')) {
+          console.warn(`[Display] Cannot generate from base64, using original`);
+        } else {
+          const hostname = new URL(request.url).hostname;
+          const originalUrl = `https://${hostname}${finalUrl}`;
           
-          await env.R2.put(displayKey, displayImageData, {
-            httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000' },
-            customMetadata: {
-              uploadedAt: new Date().toISOString(),
-              hash: imageHash,
-              type: 'display',
-              originalKey: r2Key
+          // 生成展示图：长边 1080px，WebP 格式
+          const displayResponse = await fetch(originalUrl, {
+            cf: {
+              image: {
+                width: 1080,
+                height: 1080,
+                quality: 85,
+                fit: 'scale-down',
+                format: 'webp'
+              }
             }
           });
-          
-          displayUrl = `/r2/${displayKey}`;
-          console.log(`[Display] Generated: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP`);
-        } else {
-          console.warn(`[Display] Failed to generate: HTTP ${displayResponse.status}, using original`);
+        
+          if (displayResponse.ok) {
+            const displayImageData = await displayResponse.arrayBuffer();
+            const displayKey = `${baseKey}-display.webp`;
+            
+            await env.R2.put(displayKey, displayImageData, {
+              httpMetadata: { contentType: 'image/webp', cacheControl: 'public, max-age=31536000' },
+              customMetadata: {
+                uploadedAt: new Date().toISOString(),
+                hash: imageHash,
+                type: 'display',
+                originalKey: r2Key
+              }
+            });
+            
+            displayUrl = `/r2/${displayKey}`;
+            console.log(`[Display] Generated: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP`);
+          } else {
+            console.warn(`[Display] Failed to generate: HTTP ${displayResponse.status}, using original`);
+          }
         }
       } catch (displayError) {
         console.warn(`[Display] Error generating display image:`, displayError.message);
