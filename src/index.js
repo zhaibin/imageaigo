@@ -615,23 +615,33 @@ async function handleAnalyze(request, env) {
     }
     
     const formData = await request.formData();
-    const originalFile = formData.get('original');
-    const compressedFile = formData.get('compressed');
+    const imageFile = formData.get('image');
     const imageUrl = formData.get('url');
-    const sourceUrl = formData.get('sourceUrl');
 
     let imageData, originalImageData, finalUrl;
 
-    if (originalFile && compressedFile) {
-      if (originalFile.size > 20 * 1024 * 1024) {
-        throw new Error(`Original image too large: ${(originalFile.size / 1024 / 1024).toFixed(2)}MB (max 20MB)`);
+    if (imageFile) {
+      // 处理上传的文件
+      if (imageFile.size > 20 * 1024 * 1024) {
+        throw new Error(`Image too large: ${(imageFile.size / 1024 / 1024).toFixed(2)}MB (max 20MB)`);
       }
       
-      originalImageData = await originalFile.arrayBuffer();
-      imageData = await compressedFile.arrayBuffer();
-      console.log(`[Upload] Original: ${(originalImageData.byteLength / 1024).toFixed(2)}KB, Compressed: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+      originalImageData = await imageFile.arrayBuffer();
+      console.log(`[Upload] Original image: ${(originalImageData.byteLength / 1024).toFixed(2)}KB`);
+      
+      // 使用 Cloudflare Image Resizing 或简化处理进行压缩
+      const { resizeImage } = await import('./lib/image-resizing.js');
+      imageData = await resizeImage(originalImageData, {
+        maxWidth: 256,
+        maxHeight: 256,
+        quality: 80
+      });
+      
+      console.log(`[Resize] Compressed for AI: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
       finalUrl = `pending_r2`;
+      
     } else if (imageUrl) {
+      // 处理 URL 图片
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
       
@@ -641,20 +651,29 @@ async function handleAnalyze(request, env) {
         if (!response.ok) throw new Error(`Failed to fetch image: HTTP ${response.status}`);
         
         originalImageData = await response.arrayBuffer();
-        imageData = originalImageData;
         
-        const sizeMB = imageData.byteLength / (1024 * 1024);
-        if (sizeMB > 10) throw new Error(`Image too large: ${sizeMB.toFixed(2)}MB (max 10MB)`);
+        const sizeMB = originalImageData.byteLength / (1024 * 1024);
+        if (sizeMB > 20) throw new Error(`Image too large: ${sizeMB.toFixed(2)}MB (max 20MB)`);
         if (sizeMB > 2) console.warn(`[URL] Large image: ${sizeMB.toFixed(2)}MB`);
         
+        // 压缩用于 AI 分析
+        const { resizeImage } = await import('./lib/image-resizing.js');
+        imageData = await resizeImage(originalImageData, {
+          maxWidth: 256,
+          maxHeight: 256,
+          quality: 80
+        });
+        
+        console.log(`[Resize] URL image compressed: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
         finalUrl = imageUrl;
+        
       } catch (error) {
         clearTimeout(timeout);
         if (error.name === 'AbortError') throw new Error('Image fetch timeout (10s)');
         throw error;
       }
     } else {
-      throw new Error('No image provided (need original+compressed or url)');
+      throw new Error('No image provided (need image file or url)');
     }
 
     const imageHash = await generateHash(imageData);

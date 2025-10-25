@@ -109,7 +109,7 @@ async function processQueueMessage(message, env) {
     
     const finalUrl = `/r2/${r2Key}`;
     
-    // 获取图片尺寸
+    // 获取图片尺寸（从原图）
     const dimensions = await Promise.race([
       getImageDimensions(imageData),
       new Promise((_, reject) => 
@@ -117,9 +117,19 @@ async function processQueueMessage(message, env) {
       )
     ]);
     
-    // AI 分析（带超时保护）
+    // 压缩图片用于 AI 分析
+    const { resizeImage } = await import('../lib/image-resizing.js');
+    const compressedImageData = await resizeImage(imageData, {
+      maxWidth: 256,
+      maxHeight: 256,
+      quality: 80
+    });
+    
+    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Compressed: ${(imageData.byteLength / 1024).toFixed(2)}KB → ${(compressedImageData.byteLength / 1024).toFixed(2)}KB`);
+    
+    // AI 分析（使用压缩图，带超时保护）
     const analysis = await Promise.race([
-      analyzeImage(imageData, env.AI),
+      analyzeImage(compressedImageData, env.AI),
       new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI analysis timeout (60s)')), 60000)
       )

@@ -18,6 +18,12 @@ id = "ab48566bc17846bfb2da187751b396a4"
 [ai]
 binding = "AI"
 
+# Image Resizing (需要 Workers Paid Plan)
+# 启用后可以使用 cf.image 选项进行高性能图片处理
+# 详见: https://developers.cloudflare.com/images/image-resizing/
+# [image_resizing]
+# enabled = true
+
 # R2 Storage for images
 [[r2_buckets]]
 binding = "R2"

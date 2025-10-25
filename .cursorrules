@@ -1,19 +1,246 @@
 # ImageAI Go 项目规范
 
-## 代码风格
-- 使用 ES6+ 语法
-- 遵循现有代码风格
-- 添加必要的注释
-- 函数命名清晰明了
+## 项目概述
+- **技术栈**: Cloudflare Workers + D1 (SQLite) + R2 (对象存储) + KV (缓存)
+- **AI 模型**: Llama 3.2 11B Vision
+- **架构**: 无框架，纯 JavaScript ES6+，模块化设计
+- **核心功能**: AI 图片分析、用户认证、多级缓存、SEO 优化
+
+## 代码组织结构
+
+### 模块划分
+```
+src/
+├── index.js              # 主入口、路由分发
+├── auth/                 # 认证模块（注册、登录、验证码、防暴力破解）
+├── pages/                # 页面构建（首页、管理后台、用户页面）
+├── services/             # 业务服务（AI 分析、推荐、队列处理）
+├── templates/            # 模板系统（布局、样式、组件）
+└── lib/                  # 工具库（性能优化、验证、工具函数）
+```
+
+### 关键文件说明
+- **auth/auth.js** - 用户认证核心逻辑
+- **auth/brute-force.js** - Turnstile 人机验证和暴力破解防护
+- **services/ai/analyzer.js** - AI 图片分析（Llama Vision）
+- **lib/performance.js** - 缓存管理器、性能优化工具
+- **pages/home.js** - 首页构建，包含图片压缩算法 (line 315-352)
+
+## 代码风格规范
+
+### JavaScript 规范
+- **语法**: 严格使用 ES6+ 语法（async/await、解构、箭头函数）
+- **模块化**: 使用 ES6 模块（export/import）
+- **命名约定**:
+  - 函数: camelCase (`analyzeImage`, `handleRequest`)
+  - 类: PascalCase (`CacheManager`, `ResponseOptimizer`)
+  - 常量: UPPER_SNAKE_CASE (`MAX_FILE_SIZE`, `DEFAULT_LIMIT`)
+  - 私有函数: 下划线前缀 (`_validateInput`)
+- **注释**: 
+  - 所有导出函数必须包含 JSDoc 注释
+  - 复杂逻辑添加行内注释说明
+  - 关键决策点注明原因
+
+### 代码质量
+- **错误处理**: 使用 try-catch，提供清晰错误信息
+- **日志规范**: 使用 `console.log`，格式为 `[Module] Action: details`
+- **性能考虑**: 
+  - 优先使用缓存（三级：内存 > KV > 数据库）
+  - 避免 N+1 查询
+  - 批量操作优于循环单次操作
+- **安全原则**:
+  - 所有用户输入必须验证和清洗
+  - 密码使用 SHA-256 哈希
+  - 会话使用 HttpOnly Cookie
+
+## 核心功能规范
+
+### 图片压缩算法
+- **位置**: `src/lib/image-resizing.js`
+- **函数**: `resizeImage(imageData, options)`
+- **处理方式**: 服务端使用 Cloudflare Image Resizing API
+- **流程**: 
+  1. 客户端上传原图
+  2. 服务端接收并存储原图到 R2
+  3. 使用 Image Resizing API 压缩（256px, 80% 质量）
+  4. 压缩版用于 AI 分析
+- **参数**: maxWidth=256, maxHeight=256, quality=80
+- **优势**: 
+  - 减轻客户端负担
+  - 利用 Cloudflare 边缘网络
+  - 统一服务端处理
+
+### AI 分析流程
+1. 客户端上传原图到服务器
+2. 服务端存储原图到 R2
+3. 服务端使用 Image Resizing API 压缩图片（256px, 80% 质量）
+4. 使用压缩图调用 Llama Vision API
+5. 生成描述 + 三级标签（主分类 > 子分类 > 属性）
+6. 存储分析结果到 D1 数据库
+
+### 缓存策略
+- **内存缓存**: 60 秒，最多 100 项
+- **KV 缓存**: 1 小时（3600 秒）
+- **浏览器缓存**: 5 分钟（300 秒）
+- **缓存键格式**: `prefix:part1:part2`
+- **使用**: `CacheManager.getOrSet(key, fetchFn, options)`
+
+### 认证系统
+- **登录方式**: 密码登录 + 验证码登录（双模式）
+- **防护措施**: 
+  - 2 次失败显示 Turnstile
+  - 10 次失败锁定 15 分钟
+  - IP + 账户双重追踪
+- **会话管理**: JWT-like token，存储在 HttpOnly Cookie
+- **验证码**: 6 位数字，5 分钟有效，3 次失败锁定
 
 ## 文档规范
-- 仅保留核心文档：README.md、CHANGELOG.md、LICENSE
-- 重要信息整合到 README
-- 版本变更记录在 CHANGELOG
-- 避免创建冗余文档
 
-## 提交规范
-- 清晰的提交信息
-- 每次提交一个功能
-- 更新相关文档
+### 核心文档
+- **README.md** - 项目主文档，部署指南，API 文档
+- **CHANGELOG.md** - 版本变更记录
+- **LICENSE** - MIT 开源协议
+- **src/README.md** - 源代码结构说明
+- **仅保留以上文档，避免创建冗余文档**
 
+### 文档更新原则
+- 新功能必须更新 README.md 对应章节
+- 版本发布必须更新 CHANGELOG.md
+- 重要信息整合到 README，不单独创建文件
+
+## Git 提交规范
+
+### 提交信息格式
+```
+<type>: <subject>
+
+<body>
+
+<footer>
+```
+
+### Type 类型
+- **feat**: 新功能
+- **fix**: 修复 bug
+- **perf**: 性能优化
+- **refactor**: 代码重构
+- **docs**: 文档更新
+- **style**: 代码格式调整
+- **chore**: 构建/工具变更
+
+### 示例
+```bash
+feat: 添加图片批量删除功能
+
+- 实现批量选择 UI
+- 添加批量删除 API
+- 更新管理后台页面
+
+Closes #123
+```
+
+## 开发工作流
+
+### 本地开发
+```bash
+wrangler dev                    # 启动本地开发服务器
+wrangler tail                   # 实时查看日志
+wrangler d1 execute imageaigo   # 执行数据库查询
+```
+
+### 测试和验证
+```bash
+./test-seo.sh                   # SEO 测试
+./turnstile.sh check            # Turnstile 配置检查
+./cleanup.sh status             # 系统状态检查
+```
+
+### 部署流程
+1. 本地测试通过
+2. 更新 CHANGELOG.md
+3. 提交代码并 push
+4. 执行 `wrangler deploy`
+5. 验证生产环境功能
+
+## 性能优化指南
+
+### 数据库优化
+- 使用索引（8 个关键索引已配置）
+- 批量查询代替循环查询
+- 使用 `getOrSet` 缓存查询结果
+- 避免 SELECT *，只查询需要的字段
+
+### API 响应优化
+- 分页加载（默认 15 条/页）
+- 使用 KV 缓存 API 响应
+- 添加 CDN 缓存头 `Cache-Control`
+- 压缩响应体（自动启用 gzip）
+
+### 图片处理优化
+- 服务端使用 Cloudflare Image Resizing 压缩
+- R2 存储启用 CDN 缓存
+- 图片懒加载和渐进式加载
+- 支持动态缩放（通过 URL 参数）
+- 可选启用 WebP 格式自动转换
+
+## 安全规范
+
+### 输入验证
+- 所有用户输入必须验证格式和长度
+- 邮箱格式验证：`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`
+- 密码强度：至少 8 位，包含字母和数字
+- 用户名：3-20 字符，字母/数字/下划线/连字符
+
+### XSS 防护
+- 使用 `escapeHtml()` 转义所有用户输入
+- Content-Type 设置为 `text/html;charset=UTF-8`
+- 添加 `X-Content-Type-Options: nosniff` 头
+
+### CSRF 防护
+- 使用 Turnstile token 验证
+- 检查 Origin 和 Referer 头
+- 使用 SameSite Cookie 属性
+
+## 环境变量管理
+
+### 必需变量
+- `ADMIN_PASSWORD` - 管理员密码（至少 8 位）
+- `ADMIN_SECRET` - 会话密钥（32 字符随机字符串）
+- `RESEND_API_TOKEN` - Resend 邮件服务 API Token
+- `TURNSTILE_SECRET_KEY` - Cloudflare Turnstile 密钥
+
+### 可选功能
+- **Image Resizing** - 需要 Workers Paid Plan
+  - 在 `wrangler.toml` 中启用 `[image_resizing]`
+  - 提供高性能边缘图片处理
+  - 当前使用降级方案（简化处理）
+
+### 配置命令
+```bash
+wrangler secret put ADMIN_PASSWORD
+wrangler secret list                # 查看已配置变量
+./admin-setup.sh                    # 交互式管理员配置
+./turnstile.sh                      # 交互式 Turnstile 配置
+```
+
+## 常见问题处理
+
+### AI 分析超时
+- 检查图片大小（建议 < 2MB）
+- 使用压缩后的图片进行分析
+- 添加重试机制（最多 3 次）
+
+### 缓存失效
+- 手动清除：`await cache.deleteByPrefix('prefix')`
+- 自动过期：设置合理的 TTL
+- 更新数据后主动删除相关缓存
+
+### 性能下降
+- 检查缓存命中率（目标 > 70%）
+- 优化数据库查询（使用 EXPLAIN）
+- 减少 API 调用次数（批量处理）
+
+---
+
+**最后更新**: 2025-10-25
+**版本**: v1.0.0

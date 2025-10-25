@@ -312,45 +312,6 @@ function getClientScript() {
         });
     }
 
-    async function compressImage(file, maxSize = 256, quality = 0.8) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    let width = img.width, height = img.height;
-                    const maxDimension = Math.max(width, height);
-                    if (maxDimension > maxSize) {
-                        const scale = maxSize / maxDimension;
-                        width = Math.round(width * scale);
-                        height = Math.round(height * scale);
-                    }
-                    const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    canvas.toBlob((blob) => {
-                        if (blob) {
-                            const compressedFile = new File([blob], file.name, {
-                                type: 'image/jpeg',
-                                lastModified: Date.now()
-                            });
-                            console.log(\`Image compressed: \${(file.size / 1024).toFixed(2)}KB → \${(blob.size / 1024).toFixed(2)}KB\`);
-                            resolve(compressedFile);
-                        } else {
-                            reject(new Error('Failed to compress image'));
-                        }
-                    }, 'image/jpeg', quality);
-                };
-                img.onerror = () => reject(new Error('Failed to load image'));
-                img.src = e.target.result;
-            };
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsDataURL(file);
-        });
-    }
-
     async function handleFileUpload(file) {
         try {
             // 检查登录状态
@@ -363,13 +324,12 @@ function getClientScript() {
             }
             
             if (loading) loading.style.display = 'block';
-            updateLoadingStatus('Preparing image...', \`Original size: \${(file.size / 1024).toFixed(2)} KB\`);
-            updateLoadingStatus('Compressing for AI...', 'Creating optimized version');
-            const compressedFile = await compressImage(file);
-            updateLoadingStatus('Uploading...', \`Original: \${(file.size / 1024).toFixed(0)}KB, AI version: \${(compressedFile.size / 1024).toFixed(0)}KB\`);
+            updateLoadingStatus('Preparing image...', \`Size: \${(file.size / 1024).toFixed(2)} KB\`);
+            updateLoadingStatus('Uploading...', 'Image will be optimized on server');
+            
+            // 直接上传原图，服务端处理压缩
             const formData = new FormData();
-            formData.append('original', file);
-            formData.append('compressed', compressedFile);
+            formData.append('image', file);
             await analyzeImage(formData);
         } catch (error) {
             if (loading) loading.style.display = 'none';
@@ -390,24 +350,16 @@ function getClientScript() {
             }
             
             if (loading) loading.style.display = 'block';
-            updateLoadingStatus('Fetching image from URL...');
-            const response = await fetch(url, { mode: 'cors' });
-            if (!response.ok) throw new Error('Failed to fetch image');
-            const blob = await response.blob();
-            const originalFile = new File([blob], 'url-image.jpg', { type: blob.type });
-            updateLoadingStatus('Compressing for AI...');
-            const compressedFile = await compressImage(originalFile);
-            updateLoadingStatus('Uploading...');
-            const formData = new FormData();
-            formData.append('original', originalFile);
-            formData.append('compressed', compressedFile);
-            formData.append('sourceUrl', url);
-            await analyzeImage(formData);
-        } catch (error) {
-            console.error('Error processing URL:', error);
+            updateLoadingStatus('Processing image URL...', 'Server will handle optimization');
+            
+            // 直接发送 URL，服务端处理下载和压缩
             const formData = new FormData();
             formData.append('url', url);
             await analyzeImage(formData);
+        } catch (error) {
+            console.error('Error processing URL:', error);
+            if (loading) loading.style.display = 'none';
+            showSuccessMessage('❌ Failed: ' + error.message, true);
         }
     }
 
