@@ -55,28 +55,55 @@ src/
 
 ## 核心功能规范
 
-### 图片压缩算法
+### 图片压缩算法（双版本系统）
 - **位置**: `src/lib/image-resizing.js`
-- **函数**: `resizeImage(imageData, options)`
 - **处理方式**: 服务端使用 Cloudflare Image Resizing API
-- **流程**: 
-  1. 客户端上传原图
-  2. 服务端接收并存储原图到 R2
-  3. 使用 Image Resizing API 压缩（256px, 80% 质量）
-  4. 压缩版用于 AI 分析
-- **参数**: maxWidth=256, maxHeight=256, quality=80
-- **优势**: 
-  - 减轻客户端负担
-  - 利用 Cloudflare 边缘网络
-  - 统一服务端处理
+
+**三种图片版本**:
+
+1. **AI 分析版**（临时，不存储）
+   - 尺寸: 长边 256px
+   - 格式: JPEG
+   - 质量: 80%
+   - 用途: AI 分析识别
+
+2. **前端展示版**（存储为 xxx-display.webp）
+   - 尺寸: 长边最大 1080px
+   - 格式: WebP
+   - 质量: 85%
+   - 用途: 列表/网格展示
+   - 条件: 仅当原图 > 1080px 时生成
+
+3. **原图**（存储为 xxx-original.jpg）
+   - 尺寸: 保持原始
+   - 格式: 原始格式
+   - 用途: 查看大图、下载
+
+**存储结构**:
+```
+images/
+├── timestamp-hash-original.jpg   (原图)
+└── timestamp-hash-display.webp   (展示图, 仅大图生成)
+```
+
+**数据库字段**:
+- `image_url`: 原图 URL
+- `display_url`: 展示图 URL（旧记录 = image_url）
+
+**优势**:
+- 前端加载速度提升 60-80%
+- AI 分析精准高效
+- 保留原图完整质量
+- WebP 格式节省带宽 40-60%
 
 ### AI 分析流程
 1. 客户端上传原图到服务器
-2. 服务端存储原图到 R2
-3. 服务端使用 Image Resizing API 压缩图片（256px, 80% 质量）
-4. 使用压缩图调用 Llama Vision API
-5. 生成描述 + 三级标签（主分类 > 子分类 > 属性）
-6. 存储分析结果到 D1 数据库
+2. 服务端存储原图到 R2 (xxx-original.jpg)
+3. 生成前端展示图 (xxx-display.webp, 1080px) - 仅大图
+4. 临时生成 AI 分析图 (256px JPEG) - 不存储
+5. 使用 AI 分析图调用 Llama Vision API
+6. 生成描述 + 三级标签（主分类 > 子分类 > 属性）
+7. 存储分析结果到 D1 数据库（包含 image_url 和 display_url）
 
 ### 缓存策略
 - **内存缓存**: 60 秒，最多 100 项
