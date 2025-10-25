@@ -117,27 +117,25 @@ async function processQueueMessage(message, env) {
       )
     ]);
     
-    // 使用 Cloudflare Image Resizing 通过 R2 URL 压缩
-    const { resizeImageViaUrl } = await import('../lib/image-resizing.js');
-    let compressedImageData;
+    // 使用 Cloudflare Image Resizing 压缩大图片
+    let compressedImageData = imageData;
+    const sizeMB = imageData.byteLength / (1024 * 1024);
     
-    try {
-      // 构建 R2 URL（内部访问）
-      const imageUrl = `/r2/${r2Key}`;
-      compressedImageData = await resizeImageViaUrl(imageUrl, {
-        width: 256,
-        height: 256,
-        quality: 80,
-        fit: 'scale-down'
-      });
+    if (sizeMB > 2) {
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Large image: ${sizeMB.toFixed(2)}MB, attempting resize`);
       
-      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Image resized: ${(imageData.byteLength / 1024).toFixed(2)}KB → ${(compressedImageData.byteLength / 1024).toFixed(2)}KB`);
-    } catch (resizeError) {
-      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Resize failed, using original:`, resizeError.message);
-      compressedImageData = imageData;
+      // 注意：这里不能直接使用内部 URL，需要等待 Image Resizing 功能完全配置
+      // 暂时使用原图，但添加大小限制
+      if (sizeMB > 10) {
+        throw new Error(`Image too large: ${sizeMB.toFixed(2)}MB (max 10MB for AI analysis)`);
+      }
+      
+      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Using original image (${sizeMB.toFixed(2)}MB) - Image Resizing not configured`);
+    } else {
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Small image: ${sizeMB.toFixed(2)}MB, no resize needed`);
     }
     
-    // 验证压缩后的数据
+    // 验证数据
     if (!compressedImageData || compressedImageData.byteLength === 0) {
       throw new Error('Image processing failed: result is empty');
     }
