@@ -78,8 +78,8 @@ export async function handleUnsplashSync(env) {
     let failed = 0;
     
     // 快速预处理：下载、检查重复、上传到临时存储、发送到队列
-    // 使用批次处理减少并发，避免 KV 429 错误
-    const batchSize = 10; // 每批10张，减少并发
+    // 使用更小的批次减少并发，避免 KV 429 错误
+    const batchSize = 5; // 每批5张，更保守
     const batches = [];
     for (let i = 0; i < photos.length; i += batchSize) {
       batches.push(photos.slice(i, i + batchSize));
@@ -180,9 +180,9 @@ export async function handleUnsplashSync(env) {
       
       allResults = allResults.concat(batchResults);
       
-      // 批次间稍微延迟，避免速率限制
+      // 批次间延迟，避免速率限制
       if (batchIdx < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 增加到 1 秒
       }
     }
     
@@ -233,14 +233,17 @@ export async function handleUnsplashSync(env) {
   }
 }
 
-// 更新批次文件状态（优化版本，减少 KV 写入频率）
+// 更新批次文件状态（激进优化版本，节流机制）
 async function updateBatchFileStatus(env, batchId, fileIndex, status, error = null) {
   try {
     const statusKey = `batch:${batchId}`;
     
-    // 使用本地缓存，减少 KV 读取
+    // 初始化缓存和节流器
     if (!globalThis.batchStatusCache) {
       globalThis.batchStatusCache = new Map();
+    }
+    if (!globalThis.kvUpdateQueue) {
+      globalThis.kvUpdateQueue = new Map();
     }
     
     let batchStatus = globalThis.batchStatusCache.get(statusKey);
@@ -266,12 +269,34 @@ async function updateBatchFileStatus(env, batchId, fileIndex, status, error = nu
     batchStatus.processing = batchStatus.files.filter(f => f.status === 'processing').length;
     batchStatus.lastActivity = Date.now();
     
-    // 异步更新 KV，不等待完成（避免 429 错误）
-    // 使用 Promise 但不 await，减少并发压力
-    env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 })
-      .catch(err => {
-        console.warn('[UpdateBatchFileStatus] KV update failed (non-blocking):', err.message);
-      });
+    // 节流机制：只有每 5 个更新或最后一个才写入 KV
+    const totalProcessed = batchStatus.completed + batchStatus.failed + batchStatus.skipped;
+    const shouldUpdate = 
+      totalProcessed % 5 === 0 || // 每 5 个更新一次
+      totalProcessed === batchStatus.total || // 最后一个
+      status === 'failed'; // 失败立即更新
+    
+    if (shouldUpdate) {
+      // 取消之前的更新队列（如果有）
+      const existingTimeout = globalThis.kvUpdateQueue.get(statusKey);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+      
+      // 延迟 1 秒后更新，合并多个更新请求
+      const timeout = setTimeout(() => {
+        env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 })
+          .then(() => {
+            console.log(`[UpdateBatchFileStatus] KV updated: ${totalProcessed}/${batchStatus.total}`);
+            globalThis.kvUpdateQueue.delete(statusKey);
+          })
+          .catch(err => {
+            console.warn('[UpdateBatchFileStatus] KV update failed:', err.message);
+          });
+      }, 1000);
+      
+      globalThis.kvUpdateQueue.set(statusKey, timeout);
+    }
     
   } catch (err) {
     console.error('[UpdateBatchFileStatus] Error:', err.message);
