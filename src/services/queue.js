@@ -117,20 +117,30 @@ async function processQueueMessage(message, env) {
       )
     ]);
     
-    // 压缩图片用于 AI 分析
-    const { resizeImage } = await import('../lib/image-resizing.js');
-    const compressedImageData = await resizeImage(imageData, {
-      maxWidth: 256,
-      maxHeight: 256,
-      quality: 80
-    });
+    // 使用 Cloudflare Image Resizing 通过 R2 URL 压缩
+    const { resizeImageViaUrl } = await import('../lib/image-resizing.js');
+    let compressedImageData;
+    
+    try {
+      // 构建 R2 URL（内部访问）
+      const imageUrl = `/r2/${r2Key}`;
+      compressedImageData = await resizeImageViaUrl(imageUrl, {
+        width: 256,
+        height: 256,
+        quality: 80,
+        fit: 'scale-down'
+      });
+      
+      console.log(`[QueueConsumer:${batchId}:${fileIndex}] Image resized: ${(imageData.byteLength / 1024).toFixed(2)}KB → ${(compressedImageData.byteLength / 1024).toFixed(2)}KB`);
+    } catch (resizeError) {
+      console.warn(`[QueueConsumer:${batchId}:${fileIndex}] Resize failed, using original:`, resizeError.message);
+      compressedImageData = imageData;
+    }
     
     // 验证压缩后的数据
     if (!compressedImageData || compressedImageData.byteLength === 0) {
-      throw new Error('Image resizing failed: result is empty');
+      throw new Error('Image processing failed: result is empty');
     }
-    
-    console.log(`[QueueConsumer:${batchId}:${fileIndex}] Image ready: ${(imageData.byteLength / 1024).toFixed(2)}KB → ${(compressedImageData.byteLength / 1024).toFixed(2)}KB`);
     
     // AI 分析（使用压缩图，带超时保护）
     const analysis = await Promise.race([

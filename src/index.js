@@ -228,8 +228,8 @@ export default {
         });
       }
 
-      // R2 images
-      if (path.startsWith('/r2/')) {
+      // R2 images (包括内部请求用于 Image Resizing)
+      if (path.startsWith('/r2/') || path.startsWith('/internal/r2/')) {
         return await handleR2Image(request, env, path);
       }
 
@@ -470,11 +470,20 @@ export default {
 
 // R2 Image Handler
 async function handleR2Image(request, env, path) {
-  const r2Key = path.substring(4);
+  // 处理内部路径和普通路径
+  let r2Key;
+  if (path.startsWith('/internal/r2/')) {
+    r2Key = path.substring(13); // 移除 '/internal/r2/'
+  } else {
+    r2Key = path.substring(4); // 移除 '/r2/'
+  }
+  
   const referer = request.headers.get('Referer');
   const host = request.headers.get('Host');
+  const isInternal = path.startsWith('/internal/r2/');
   
-  if (referer) {
+  // 内部请求跳过防盗链检查
+  if (!isInternal && referer) {
     try {
       const refererUrl = new URL(referer);
       const currentHost = host || new URL(request.url).host;
@@ -629,20 +638,69 @@ async function handleAnalyze(request, env) {
       originalImageData = await imageFile.arrayBuffer();
       console.log(`[Upload] Original image: ${(originalImageData.byteLength / 1024).toFixed(2)}KB`);
       
-      // 使用 Cloudflare Image Resizing 或简化处理进行压缩
-      const { resizeImage } = await import('./lib/image-resizing.js');
-      imageData = await resizeImage(originalImageData, {
-        maxWidth: 256,
-        maxHeight: 256,
-        quality: 80
+      // 先上传原图到 R2 临时位置
+      const tempKey = `temp/${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+      await env.R2.put(tempKey, originalImageData, {
+        httpMetadata: { contentType: 'image/jpeg' }
       });
       
-      // 验证压缩后的数据
-      if (!imageData || imageData.byteLength === 0) {
-        throw new Error('Image resizing failed: result is empty');
+      console.log(`[Upload] Uploaded to R2: ${tempKey}`);
+      
+      // 使用 Cloudflare Image Resizing
+      try {
+        // 从 R2 获取对象创建可访问的 URL
+        const r2Object = await env.R2.get(tempKey);
+        if (!r2Object) {
+          throw new Error('Failed to get R2 object');
+        }
+        
+        // 创建一个临时 Response 对象，然后通过 fetch 使用 cf.image 处理
+        const tempResponse = new Response(r2Object.body, {
+          headers: {
+            'Content-Type': 'image/jpeg'
+          }
+        });
+        
+        // 创建一个数据 URL 或使用 Worker 内部地址
+        const hostname = new URL(request.url).hostname;
+        const internalUrl = `https://${hostname}/internal/r2/${tempKey}`;
+        
+        console.log(`[Resize] Attempting to resize via Image Resizing API`);
+        
+        const resizedResponse = await fetch(internalUrl, {
+          cf: {
+            image: {
+              width: 256,
+              height: 256,
+              quality: 80,
+              fit: 'scale-down',
+              format: 'jpeg'
+            }
+          }
+        });
+        
+        if (resizedResponse.ok) {
+          imageData = await resizedResponse.arrayBuffer();
+          console.log(`[Resize] Success: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+        } else {
+          throw new Error(`Resize failed: HTTP ${resizedResponse.status}`);
+        }
+      } catch (resizeError) {
+        console.warn(`[Resize] Image Resizing not available or failed:`, resizeError.message);
+        console.log(`[Resize] Using original image for AI analysis`);
+        imageData = originalImageData;
       }
       
-      console.log(`[Resize] Image ready for AI: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+      // 清理临时文件
+      await env.R2.delete(tempKey).catch(err => 
+        console.warn(`[Cleanup] Failed to delete temp file:`, err.message)
+      );
+      
+      // 验证数据
+      if (!imageData || imageData.byteLength === 0) {
+        throw new Error('Image processing failed: result is empty');
+      }
+      
       finalUrl = `pending_r2`;
       
     } else if (imageUrl) {
@@ -661,20 +719,28 @@ async function handleAnalyze(request, env) {
         if (sizeMB > 20) throw new Error(`Image too large: ${sizeMB.toFixed(2)}MB (max 20MB)`);
         if (sizeMB > 2) console.warn(`[URL] Large image: ${sizeMB.toFixed(2)}MB`);
         
-        // 压缩用于 AI 分析
-        const { resizeImage } = await import('./lib/image-resizing.js');
-        imageData = await resizeImage(originalImageData, {
-          maxWidth: 256,
-          maxHeight: 256,
-          quality: 80
-        });
+        // 使用 Cloudflare Image Resizing 直接从 URL 压缩
+        const { resizeImageViaUrl } = await import('./lib/image-resizing.js');
+        
+        try {
+          imageData = await resizeImageViaUrl(imageUrl, {
+            width: 256,
+            height: 256,
+            quality: 80,
+            fit: 'scale-down'
+          });
+          
+          console.log(`[Resize] URL image resized: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+        } catch (resizeError) {
+          console.warn(`[Resize] Failed to resize URL image, using original:`, resizeError.message);
+          imageData = originalImageData;
+        }
         
         // 验证压缩后的数据
         if (!imageData || imageData.byteLength === 0) {
-          throw new Error('Image resizing failed: result is empty');
+          throw new Error('Image processing failed: result is empty');
         }
         
-        console.log(`[Resize] URL image ready: ${(originalImageData.byteLength / 1024).toFixed(2)}KB → ${(imageData.byteLength / 1024).toFixed(2)}KB`);
         finalUrl = imageUrl;
         
       } catch (error) {

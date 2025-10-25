@@ -5,57 +5,80 @@
 
 /**
  * 使用 Cloudflare Image Resizing 压缩图片
- * @param {ArrayBuffer} imageData - 原始图片数据
+ * 需要通过 URL 访问图片才能使用 cf.image 选项
+ * @param {string} imageUrl - 图片 URL（R2 或其他可访问的 URL）
  * @param {Object} options - 压缩选项
  * @returns {Promise<ArrayBuffer>} 压缩后的图片数据
  */
-export async function resizeImage(imageData, options = {}) {
+export async function resizeImageViaUrl(imageUrl, options = {}) {
   const {
-    maxWidth = 256,
-    maxHeight = 256,
+    width = 256,
+    height = 256,
     quality = 80,
-    format = 'jpeg'
+    fit = 'scale-down',
+    format = 'auto'
   } = options;
 
+  // 验证输入
+  if (!imageUrl) {
+    throw new Error('Invalid image URL provided to resizeImageViaUrl');
+  }
+
+  try {
+    console.log(`[ImageResize] Using Cloudflare Image Resizing for: ${imageUrl}`);
+    
+    // 使用 Cloudflare Image Resizing API
+    // 文档: https://developers.cloudflare.com/images/transform-images/transform-via-workers/
+    const response = await fetch(imageUrl, {
+      cf: {
+        image: {
+          width: width,
+          height: height,
+          quality: quality,
+          fit: fit,
+          format: format
+        }
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Image resizing failed: HTTP ${response.status}`);
+    }
+
+    const resizedData = await response.arrayBuffer();
+    
+    console.log(`[ImageResize] Successfully resized image: ${(resizedData.byteLength / 1024).toFixed(2)}KB`);
+    
+    return resizedData;
+
+  } catch (error) {
+    console.error('[ImageResize] Error resizing via URL:', error);
+    throw error;
+  }
+}
+
+/**
+ * 从 ArrayBuffer 压缩图片
+ * 注意：由于 Cloudflare Image Resizing 需要 URL，此函数仅作为回退
+ * 实际压缩请先上传到 R2 然后使用 resizeImageViaUrl()
+ * 
+ * @param {ArrayBuffer} imageData - 原始图片数据
+ * @param {Object} options - 压缩选项
+ * @returns {Promise<ArrayBuffer>} 原始图片数据（Workers 中无法直接压缩 ArrayBuffer）
+ */
+export async function resizeImage(imageData, options = {}) {
   // 验证输入
   if (!imageData || imageData.byteLength === 0) {
     throw new Error('Invalid image data provided to resizeImage');
   }
 
-  try {
-    // 当前实现：直接使用降级方案（返回原图）
-    // 原因：Cloudflare Image Resizing 需要 Workers Paid Plan 和 R2 URL
-    // 
-    // 如果需要启用真正的压缩，有两个选项：
-    // 1. 启用 Workers Paid Plan + Image Resizing，通过 R2 URL 处理
-    // 2. 使用 WASM 图片处理库（如 @cf/image）
-    
-    console.log('[ImageResize] Processing image (resizing requires Paid Plan, using original)');
-    
-    // 获取图片尺寸信息
-    const dimensions = await getImageDimensions(imageData);
-    console.log(`[ImageResize] Image dimensions: ${dimensions.width}x${dimensions.height}, size: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
-    
-    // 如果图片已经很小，直接返回
-    if (dimensions.width <= maxWidth && dimensions.height <= maxHeight) {
-      console.log('[ImageResize] Image already within size limits, no resize needed');
-      return imageData;
-    }
-    
-    // 对于大图片，仍然返回原图但记录警告
-    // 这样可以确保 AI 分析正常工作
-    const sizeMB = imageData.byteLength / (1024 * 1024);
-    console.log(`[ImageResize] Large image (${dimensions.width}x${dimensions.height}, ${sizeMB.toFixed(2)}MB) will be used as-is`);
-    console.log('[ImageResize] Tip: Enable Cloudflare Image Resizing (Paid Plan) for automatic optimization');
-    
-    return imageData;
-
-  } catch (error) {
-    console.error('[ImageResize] Error processing image:', error);
-    // 即使出错，也返回原图，避免分析失败
-    console.log('[ImageResize] Falling back to original image due to error');
-    return imageData;
-  }
+  console.log(`[ImageResize] Note: Direct ArrayBuffer resizing not available in Workers`);
+  console.log(`[ImageResize] To use Image Resizing, upload to R2 first and use resizeImageViaUrl()`);
+  console.log(`[ImageResize] Returning original image: ${(imageData.byteLength / 1024).toFixed(2)}KB`);
+  
+  // 在 Workers 中，我们不能直接使用 Blob URL
+  // 必须先将图片上传到可访问的位置（如 R2），然后使用 URL 进行压缩
+  return imageData;
 }
 
 /**
