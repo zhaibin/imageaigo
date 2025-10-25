@@ -800,7 +800,7 @@ async function handleAnalyze(request, env) {
 
     // Check if image already exists in database (avoid duplicates)
     const existingImage = await env.DB.prepare(
-      'SELECT id, slug, image_url, description FROM images WHERE image_hash = ?'
+      'SELECT id, slug, image_url, display_url, description FROM images WHERE image_hash = ?'
     ).bind(imageHash).first();
     
     if (existingImage) {
@@ -956,7 +956,7 @@ async function handleGetImages(request, env) {
     }
 
     let query = `
-      SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
+      SELECT DISTINCT i.id, i.slug, i.image_url, i.display_url, i.description, i.width, i.height, i.created_at,
         (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
         i.user_id, u.username, u.display_name, u.avatar_url
       FROM images i
@@ -3286,7 +3286,7 @@ async function handleAdminImages(request, env) {
     const offset = (page - 1) * limit;
     
     let query = `
-      SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at,
+      SELECT DISTINCT i.id, i.slug, i.image_url, i.display_url, i.description, i.width, i.height, i.created_at,
         (SELECT COUNT(*) FROM likes WHERE image_id = i.id) as likes_count,
         i.user_id, u.username, u.display_name, u.avatar_url
       FROM images i

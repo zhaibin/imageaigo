@@ -219,7 +219,7 @@ export async function getRecommendations(db, imageId, limit = 8) {
 export async function getImagesByCategory(db, categoryName, limit = 20) {
   try {
     const { results } = await db.prepare(`
-      SELECT DISTINCT i.id, i.slug, i.image_url, i.description, i.width, i.height, i.created_at
+      SELECT DISTINCT i.id, i.slug, i.image_url, i.display_url, i.description, i.width, i.height, i.created_at
       FROM images i
       JOIN image_tags it ON i.id = it.image_id
       JOIN tags t ON it.tag_id = t.id
