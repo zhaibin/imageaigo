@@ -1264,7 +1264,7 @@ export function buildAdminDashboard() {
         
         if (result && result.needMigration !== undefined) {
           if (result.needMigration > 0) {
-            statusEl.innerHTML = ` <strong>${result.needMigration} 张旧大图片</strong>需要生成 WebP 展示版本`;
+            statusEl.innerHTML = ' <strong>' + result.needMigration + ' 张旧大图片</strong>需要生成 WebP 展示版本';
             statusEl.style.color = '#e74c3c';
           } else {
             statusEl.innerHTML = ' ✅ 所有图片都已生成展示版本';
@@ -1559,6 +1559,9 @@ export function buildAdminDashboard() {
       ]).catch(err => {
         console.error('初始化失败:', err);
       });
+      
+      // 检查进行中的任务
+      startProgressMonitoring();
     });
     
     // 批量上传功能
@@ -1900,11 +1903,6 @@ export function buildAdminDashboard() {
         icon.textContent = '▼';
       }
     }
-    
-    // 页面加载时检查是否有进行中的任务
-    window.addEventListener('DOMContentLoaded', () => {
-      startProgressMonitoring();
-    });
     
     // 页面关闭保护
     window.addEventListener('beforeunload', (e) => {
