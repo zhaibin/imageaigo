@@ -1278,7 +1278,7 @@ export function buildAdminDashboard() {
     
     // 触发迁移
     async function triggerMigration() {
-      if (!confirm('确定要为旧的大图片生成 WebP 展示版本吗？\n\n这将调用 Image Resizing 服务生成约 50-60 张展示图。')) {
+      if (!confirm('确定要为旧的大图片生成 WebP 展示版本吗？\\n\\n这将调用 Image Resizing 服务生成约 50-60 张展示图。')) {
         return;
       }
       
