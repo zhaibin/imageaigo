@@ -6,8 +6,8 @@ import { generateHash } from '../lib/utils.js';
 export async function handleQueue(batch, env) {
   console.log(`[QueueConsumer] Processing batch of ${batch.messages.length} messages with concurrency limit`);
   
-  // 并发处理消息，每次最多3个并发
-  const concurrency = 3;
+  // 并发处理消息，每次最多2个并发（优化：AI 分析 CPU 密集，2个并发更稳定）
+  const concurrency = 2;
   const results = [];
   
   for (let i = 0; i < batch.messages.length; i += concurrency) {
@@ -182,16 +182,41 @@ async function processQueueMessage(message, env) {
       throw new Error('Image processing failed: result is empty');
     }
     
-    // AI 分析（使用压缩图，带超时保护）
-    const analysis = await Promise.race([
-      analyzeImage(compressedImageData, env.AI),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('AI analysis timeout (60s)')), 60000)
-      )
-    ]);
+    // AI 分析（带重试机制，最多重试 1 次，共 2 次尝试）
+    let analysis;
+    const maxRetries = 1;
     
-    if (!analysis) {
-      throw new Error('AI analysis returned null');
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`[QueueConsumer:${batchId}:${fileIndex}] AI analysis attempt ${attempt + 1}/${maxRetries + 1}`);
+        
+        analysis = await Promise.race([
+          analyzeImage(compressedImageData, env.AI),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('AI analysis timeout (60s)')), 60000)
+          )
+        ]);
+        
+        if (!analysis || !analysis.description) {
+          throw new Error('AI analysis returned invalid result');
+        }
+        
+        console.log(`[QueueConsumer:${batchId}:${fileIndex}] AI analysis succeeded on attempt ${attempt + 1}`);
+        break; // 成功，跳出循环
+        
+      } catch (aiError) {
+        console.warn(`[QueueConsumer:${batchId}:${fileIndex}] AI attempt ${attempt + 1} failed: ${aiError.message}`);
+        
+        if (attempt === maxRetries) {
+          // 最后一次尝试也失败了
+          console.error(`[QueueConsumer:${batchId}:${fileIndex}] AI failed after ${maxRetries + 1} attempts, skipping`);
+          throw aiError;
+        }
+        
+        // 重试前等待 2 秒
+        console.log(`[QueueConsumer:${batchId}:${fileIndex}] Retrying AI analysis in 2 seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
     
     analysis.dimensions = dimensions;

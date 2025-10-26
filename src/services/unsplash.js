@@ -77,92 +77,126 @@ export async function handleUnsplashSync(env) {
     let skipped = 0;
     let failed = 0;
     
-    // 快速预处理：下载、检查重复、上传临时文件、发送到队列
-    // 避免 HTTP 超时，让队列异步处理 AI 分析
-    for (let i = 0; i < photos.length; i++) {
-      const photo = photos[i];
-      const photoNum = i + 1;
+    // 并发预处理：分批并发下载、检查重复、上传临时文件、发送到队列
+    // 5 张图片并发下载，避免 HTTP 超时，大幅提升速度
+    const downloadConcurrency = 5;
+    const batches = [];
+    
+    // 将 photos 分成多个批次
+    for (let i = 0; i < photos.length; i += downloadConcurrency) {
+      batches.push(photos.slice(i, i + downloadConcurrency));
+    }
+    
+    console.log(`[UnsplashSync] Processing ${photos.length} photos in ${batches.length} batches (${downloadConcurrency} concurrent)`);
+    
+    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      const batch = batches[batchIdx];
+      const batchStartIdx = batchIdx * downloadConcurrency;
       
-      try {
-        console.log(`[UnsplashSync:${photoNum}/${photos.length}] Preprocessing ${photo.id}`);
-        
-        // 1. 下载图片（10秒超时）
-        const imageUrl = photo.urls.regular;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        
-        const imageResponse = await fetch(imageUrl, { signal: controller.signal });
-        clearTimeout(timeout);
-        
-        if (!imageResponse.ok) {
-          console.warn(`[UnsplashSync:${photoNum}] Download failed: HTTP ${imageResponse.status}`);
-          await updateUnsplashBatchStatus(env, syncBatchId, i, 'failed', `Download failed: ${imageResponse.status}`, photo.id);
-          failed++;
-          continue;
-        }
-        
-        const imageData = await imageResponse.arrayBuffer();
-        const sizeMB = imageData.byteLength / (1024 * 1024);
-        
-        // 2. 检查大小
-        if (sizeMB > 20) {
-          console.warn(`[UnsplashSync:${photoNum}] Too large: ${sizeMB.toFixed(2)}MB, skipped`);
-          await updateUnsplashBatchStatus(env, syncBatchId, i, 'skipped', 'Too large (>20MB)', photo.id);
-          skipped++;
-          continue;
-        }
-        
-        console.log(`[UnsplashSync:${photoNum}] Downloaded: ${sizeMB.toFixed(2)}MB`);
-        
-        // 3. 检查重复
-        const imageHash = await generateHash(imageData);
-        const existing = await env.DB.prepare(
-          'SELECT id, slug FROM images WHERE image_hash = ?'
-        ).bind(imageHash).first();
-        
-        if (existing) {
-          console.log(`[UnsplashSync:${photoNum}] Duplicate: ${existing.slug}, skipped`);
-          await updateUnsplashBatchStatus(env, syncBatchId, i, 'skipped', `Duplicate: ${existing.slug}`, photo.id);
-          skipped++;
-          continue; // 重复直接跳过，不进行 AI 分析 ✅
-        }
-        
-        // 4. 上传到临时 R2
-        const tempKey = `temp/unsplash/${syncBatchId}/${i}`;
-        await env.R2.put(tempKey, imageData, {
-          httpMetadata: { contentType: 'image/jpeg' },
-          customMetadata: {
-            hash: imageHash,
-            fileName: `unsplash-${photo.id}.jpg`,
-            unsplashId: photo.id,
-            unsplashAuthor: photo.user?.name || 'Unknown',
-            unsplashLink: photo.links?.html || '',
-            sourceUrl: 'unsplash'
+      console.log(`[UnsplashSync] Batch ${batchIdx + 1}/${batches.length}: Processing ${batch.length} photos concurrently`);
+      
+      // 并发处理这批图片
+      const batchResults = await Promise.allSettled(
+        batch.map(async (photo, idx) => {
+          const globalIdx = batchStartIdx + idx;
+          const photoNum = globalIdx + 1;
+          
+          try {
+            console.log(`[UnsplashSync:${photoNum}/${photos.length}] Downloading ${photo.id}...`);
+            
+            // 更新状态：正在下载
+            await updateUnsplashBatchStatus(env, syncBatchId, globalIdx, 'processing', null, photo.id);
+            
+            // 1. 下载图片（10秒超时）
+            const imageUrl = photo.urls.regular;
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 10000);
+            
+            const imageResponse = await fetch(imageUrl, { signal: controller.signal });
+            clearTimeout(timeout);
+            
+            if (!imageResponse.ok) {
+              throw new Error(`Download failed: HTTP ${imageResponse.status}`);
+            }
+            
+            const imageData = await imageResponse.arrayBuffer();
+            const sizeMB = imageData.byteLength / (1024 * 1024);
+            
+            // 2. 检查大小
+            if (sizeMB > 20) {
+              await updateUnsplashBatchStatus(env, syncBatchId, globalIdx, 'skipped', 'Too large (>20MB)', photo.id);
+              console.warn(`[UnsplashSync:${photoNum}] Too large: ${sizeMB.toFixed(2)}MB, skipped`);
+              return { status: 'skipped', reason: 'too_large' };
+            }
+            
+            console.log(`[UnsplashSync:${photoNum}] Downloaded: ${sizeMB.toFixed(2)}MB`);
+            
+            // 3. 检查重复
+            const imageHash = await generateHash(imageData);
+            const existing = await env.DB.prepare(
+              'SELECT id, slug FROM images WHERE image_hash = ?'
+            ).bind(imageHash).first();
+            
+            if (existing) {
+              await updateUnsplashBatchStatus(env, syncBatchId, globalIdx, 'skipped', `Duplicate: ${existing.slug}`, photo.id);
+              console.log(`[UnsplashSync:${photoNum}] Duplicate: ${existing.slug}, skipped`);
+              return { status: 'skipped', reason: 'duplicate' };
+            }
+            
+            // 4. 上传到临时 R2
+            const tempKey = `temp/unsplash/${syncBatchId}/${globalIdx}`;
+            await env.R2.put(tempKey, imageData, {
+              httpMetadata: { contentType: 'image/jpeg' },
+              customMetadata: {
+                hash: imageHash,
+                fileName: `unsplash-${photo.id}.jpg`,
+                unsplashId: photo.id,
+                unsplashAuthor: photo.user?.name || 'Unknown',
+                unsplashLink: photo.links?.html || '',
+                sourceUrl: 'unsplash'
+              }
+            });
+            
+            // 5. 随机选择一个用户
+            const randomUser = randomUsers.results[Math.floor(Math.random() * randomUsers.results.length)];
+            const randomUserId = randomUser.id;
+            
+            // 6. 发送到队列
+            await env.IMAGE_QUEUE.send({
+              batchId: syncBatchId,
+              fileIndex: globalIdx,
+              fileName: `unsplash-${photo.id}.jpg`,
+              imageHash: imageHash,
+              contentType: 'image/jpeg',
+              sourceType: 'unsplash',
+              userId: randomUserId
+            });
+            
+            console.log(`[UnsplashSync:${photoNum}] Queued for AI analysis`);
+            return { status: 'queued' };
+            
+          } catch (error) {
+            console.error(`[UnsplashSync:${photoNum}] Failed:`, error.message);
+            await updateUnsplashBatchStatus(env, syncBatchId, globalIdx, 'failed', error.message, photo.id);
+            return { status: 'failed', error: error.message };
           }
-        });
-        
-        // 5. 随机选择一个用户
-        const randomUser = randomUsers.results[Math.floor(Math.random() * randomUsers.results.length)];
-        const randomUserId = randomUser.id;
-        
-        // 6. 发送到队列
-        await env.IMAGE_QUEUE.send({
-          batchId: syncBatchId,
-          fileIndex: i,
-          fileName: `unsplash-${photo.id}.jpg`,
-          imageHash: imageHash,
-          contentType: 'image/jpeg',
-          sourceType: 'unsplash',
-          userId: randomUserId
-        });
-        
-        console.log(`[UnsplashSync:${photoNum}] Queued for AI analysis`);
-        queued++;
-        
-      } catch (error) {
-        console.error(`[UnsplashSync:${photoNum}] Preprocessing failed:`, error.message);
-        await updateUnsplashBatchStatus(env, syncBatchId, i, 'failed', error.message, photo.id);
-        failed++;
+        })
+      );
+      
+      // 统计这批的结果
+      batchResults.forEach(result => {
+        if (result.status === 'fulfilled') {
+          if (result.value.status === 'queued') queued++;
+          else if (result.value.status === 'skipped') skipped++;
+          else if (result.value.status === 'failed') failed++;
+        } else {
+          failed++;
+        }
+      });
+      
+      // 批次间延迟，避免压力过大
+      if (batchIdx < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
     
