@@ -4600,122 +4600,48 @@ async function handleAdminMigrateDisplayImages(request, env, ctx) {
     await env.CACHE.put(`batch:${migrateBatchId}`, JSON.stringify(batchStatus), { expirationTtl: 7200 });
     console.log(`[MigrateDisplay] Batch initialized: ${migrateBatchId}`);
     
-    // 异步处理迁移
-    const processMigration = async () => {
-      let migrated = 0;
-      let failed = 0;
-      let skipped = 0;
-      
-      console.log(`[MigrateDisplay] Starting to process ${images.length} images`);
-      
-      for (let i = 0; i < images.length; i++) {
-        const image = images[i];
-        
-        try {
-          console.log(`[MigrateDisplay:${i + 1}/${images.length}] Processing image #${image.id}`);
-          
-          // 更新状态：正在处理
-          await updateBatchStatus(env, migrateBatchId, i, 'processing', null, `Image #${image.id}`);
-          
-          // 检查 image_url 是否有效
-          if (!image.image_url || !image.image_url.startsWith('/r2/')) {
-            console.warn(`[MigrateDisplay:${i + 1}] Invalid image_url: ${image.image_url}`);
-            await updateBatchStatus(env, migrateBatchId, i, 'skipped', 'Invalid image_url', `Image #${image.id}`);
-            skipped++;
-            continue;
-          }
-          
-          // 提取原图的 base key
-          const originalKey = image.image_url.replace('/r2/', '');
-          const baseKey = originalKey.replace('-original.jpg', '').replace('.jpg', '').replace('.jpeg', '').replace('.png', '');
-          
-          // 生成展示图（1080px WebP）
-          const originalUrl = `https://imageaigo.cc${image.image_url}`;
-          
-          const displayResponse = await fetch(originalUrl, {
-            cf: {
-              image: {
-                width: 1080,
-                height: 1080,
-                quality: 85,
-                fit: 'scale-down',
-                format: 'webp'
-              }
-            }
-          });
-          
-          if (!displayResponse.ok) {
-            throw new Error(`Image Resizing failed: HTTP ${displayResponse.status}`);
-          }
-          
-          const displayImageData = await displayResponse.arrayBuffer();
-          const displayKey = `${baseKey}-display.webp`;
-          
-          // 上传展示图到 R2
-          await env.R2.put(displayKey, displayImageData, {
-            httpMetadata: { 
-              contentType: 'image/webp',
-              cacheControl: 'public, max-age=31536000'
-            },
-            customMetadata: {
-              uploadedAt: new Date().toISOString(),
-              hash: image.image_hash,
-              type: 'display',
-              originalKey: originalKey,
-              migratedAt: new Date().toISOString()
-            }
-          });
-          
-          const displayUrl = `/r2/${displayKey}`;
-          
-          // 更新数据库
-          await env.DB.prepare(
-            'UPDATE images SET display_url = ? WHERE id = ?'
-          ).bind(displayUrl, image.id).run();
-          
-          console.log(`[MigrateDisplay:${i + 1}] ✅ Migrated: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP → Image #${image.id}`);
-          await updateBatchStatus(env, migrateBatchId, i, 'completed', null, `Image #${image.id}`);
-          migrated++;
-          
-          // 每处理 5 张暂停 1 秒，避免压力过大
-          if ((i + 1) % 5 === 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-          
-        } catch (error) {
-          console.error(`[MigrateDisplay:${i + 1}] ❌ Failed:`, error.message);
-          await updateBatchStatus(env, migrateBatchId, i, 'failed', error.message, `Image #${image.id}`);
-          failed++;
-        }
-      }
-      
-      console.log(`[MigrateDisplay] Completed: ${migrated} migrated, ${skipped} skipped, ${failed} failed`);
-      
-      // 标记批次完成
-      try {
-        const statusKey = `batch:${migrateBatchId}`;
-        const currentStatus = await env.CACHE.get(statusKey);
-        if (currentStatus) {
-          const batchStatus = JSON.parse(currentStatus);
-          batchStatus.status = 'completed';
-          batchStatus.endTime = Date.now();
-          batchStatus.duration = batchStatus.endTime - batchStatus.startTime;
-          await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 7200 });
-        }
-      } catch (err) {
-        console.error('[MigrateDisplay] Failed to mark batch as completed:', err);
-      }
-      
-      // 清理缓存
-      console.log('[MigrateDisplay] Clearing image cache...');
-      const cacheKeys = await env.CACHE.list({ prefix: 'images:' });
-      await Promise.all(cacheKeys.keys.map(key => env.CACHE.delete(key.name)));
-    };
+    // 快速预处理：发送到队列
+    // 避免 waitUntil 超时，让队列异步处理
+    let queued = 0;
+    let skipped = 0;
     
-    // 使用 waitUntil 后台处理
-    if (ctx && ctx.waitUntil) {
-      ctx.waitUntil(processMigration());
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i];
+      
+      try {
+        console.log(`[MigrateDisplay:${i + 1}/${images.length}] Queueing image #${image.id}`);
+        
+        // 检查 image_url 是否有效
+        if (!image.image_url || !image.image_url.startsWith('/r2/')) {
+          console.warn(`[MigrateDisplay:${i + 1}] Invalid image_url: ${image.image_url}`);
+          await updateBatchStatus(env, migrateBatchId, i, 'skipped', 'Invalid image_url', `Image #${image.id}`);
+          skipped++;
+          continue;
+        }
+        
+        // 发送到队列
+        await env.IMAGE_QUEUE.send({
+          batchId: migrateBatchId,
+          fileIndex: i,
+          fileName: `Image #${image.id}`,
+          imageId: image.id,
+          imageUrl: image.image_url,
+          imageHash: image.image_hash,
+          width: image.width,
+          height: image.height,
+          sourceType: 'migration'
+        });
+        
+        console.log(`[MigrateDisplay:${i + 1}] Queued: Image #${image.id}`);
+        queued++;
+        
+      } catch (error) {
+        console.error(`[MigrateDisplay:${i + 1}] Failed to queue:`, error.message);
+        await updateBatchStatus(env, migrateBatchId, i, 'failed', error.message, `Image #${image.id}`);
+      }
     }
+    
+    console.log(`[MigrateDisplay] Queuing completed: ${queued} queued, ${skipped} skipped`);
     
     return new Response(JSON.stringify({
       success: true,

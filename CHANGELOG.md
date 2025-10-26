@@ -16,9 +16,10 @@ All notable changes to this project will be documented in this file.
 
 **解决方案**:
 
-**1. 自动迁移功能** 🔄
+**1. 自动迁移功能** 🔄（使用队列处理）
 - ✅ 新增 `/api/admin/migrate-display-images` API
 - ✅ 自动查询需要迁移的大图片
+- ✅ **使用队列处理**，避免 HTTP 超时
 - ✅ 批量生成 1080px WebP 展示版本
 - ✅ 更新数据库 `display_url` 字段
 - ✅ 实时进度追踪
@@ -45,19 +46,25 @@ WHERE (width > 1080 OR height > 1080)
   AND (display_url IS NULL OR display_url = image_url)
 ```
 
-**步骤 2: 生成展示版本**
+**步骤 2: 发送到队列**（修复：避免 HTTP 超时）
 ```
-for each image:
-  1. 从 R2 读取原图
-  2. 调用 Image Resizing API（1080px WebP）
-  3. 上传展示图到 R2（xxx-display.webp）
-  4. 更新数据库 display_url
+HTTP 请求中（快速）:
+  for each image:
+    发送到队列 → IMAGE_QUEUE.send({ imageId, imageUrl, ... })
+
+队列处理（异步）:
+  for each message:
+    1. 从 R2 读取原图
+    2. 调用 Image Resizing API（1080px WebP）
+    3. 上传展示图到 R2（xxx-display.webp）
+    4. 更新数据库 display_url
 ```
 
-**步骤 3: 批处理优化**
-- 每处理 5 张暂停 1 秒
-- 避免瞬时压力过大
-- 实时更新批次状态
+**关键修复**：
+- ❌ 之前使用 `ctx.waitUntil()` 处理，7 张后超时
+- ✅ 现在使用队列异步处理，不受 HTTP 超时限制
+- ✅ 支持重试（最多 2 次）
+- ✅ 实时更新批次状态
 
 #### 使用方法
 

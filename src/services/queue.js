@@ -35,7 +35,7 @@ export async function handleQueue(batch, env) {
 // 处理单个队列消息
 async function processQueueMessage(message, env) {
   const startTime = Date.now();
-  const { batchId, fileIndex, fileName, imageHash, sourceType, userId } = message.body;
+  const { batchId, fileIndex, fileName, imageHash, sourceType, userId, imageId, imageUrl, width, height } = message.body;
   
   try {
     console.log(`[QueueConsumer:${batchId}:${fileIndex}] Processing ${fileName} (source: ${sourceType || 'upload'})`);
@@ -51,6 +51,13 @@ async function processQueueMessage(message, env) {
     // 更新状态：正在处理
     await updateBatchStatus(env, batchId, fileIndex, 'processing', null, fileName);
     
+    // 处理迁移任务
+    if (sourceType === 'migration') {
+      await processMigrationTask(message, env, batchId, fileIndex, imageId, imageUrl, imageHash, width, height);
+      return;
+    }
+    
+    // 处理普通上传任务
     // 从 R2 获取临时图片数据（根据来源类型构建路径）
     const tempKey = sourceType === 'unsplash' 
       ? `temp/unsplash/${batchId}/${fileIndex}`
@@ -535,5 +542,87 @@ async function generateSlug(description, db) {
   }
   
   return slug;
+}
+
+// 处理迁移任务
+async function processMigrationTask(message, env, batchId, fileIndex, imageId, imageUrl, imageHash, width, height) {
+  const startTime = Date.now();
+  
+  try {
+    console.log(`[Migration:${batchId}:${fileIndex}] Migrating image #${imageId} (${width}x${height})`);
+    
+    // 提取原图的 base key
+    const originalKey = imageUrl.replace('/r2/', '');
+    const baseKey = originalKey.replace('-original.jpg', '').replace('.jpg', '').replace('.jpeg', '').replace('.png', '');
+    
+    // 生成展示图（1080px WebP）
+    const originalUrl = `https://imageaigo.cc${imageUrl}`;
+    
+    const displayResponse = await fetch(originalUrl, {
+      cf: {
+        image: {
+          width: 1080,
+          height: 1080,
+          quality: 85,
+          fit: 'scale-down',
+          format: 'webp'
+        }
+      }
+    });
+    
+    if (!displayResponse.ok) {
+      throw new Error(`Image Resizing failed: HTTP ${displayResponse.status}`);
+    }
+    
+    const displayImageData = await displayResponse.arrayBuffer();
+    const displayKey = `${baseKey}-display.webp`;
+    
+    // 上传展示图到 R2
+    await env.R2.put(displayKey, displayImageData, {
+      httpMetadata: { 
+        contentType: 'image/webp',
+        cacheControl: 'public, max-age=31536000'
+      },
+      customMetadata: {
+        uploadedAt: new Date().toISOString(),
+        hash: imageHash,
+        type: 'display',
+        originalKey: originalKey,
+        migratedAt: new Date().toISOString()
+      }
+    });
+    
+    const displayUrl = `/r2/${displayKey}`;
+    
+    // 更新数据库
+    await env.DB.prepare(
+      'UPDATE images SET display_url = ? WHERE id = ?'
+    ).bind(displayUrl, imageId).run();
+    
+    const duration = Date.now() - startTime;
+    console.log(`[Migration:${batchId}:${fileIndex}] ✅ Migrated: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP → Image #${imageId} (${duration}ms)`);
+    
+    // 更新状态：完成
+    await updateBatchStatus(env, batchId, fileIndex, 'completed');
+    
+    // 确认消息处理成功
+    message.ack();
+    
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`[Migration:${batchId}:${fileIndex}] Failed after ${duration}ms:`, error.message);
+    
+    // 更新状态：失败
+    await updateBatchStatus(env, batchId, fileIndex, 'failed', error.message);
+    
+    // 重试逻辑（最多重试 2 次）
+    if (message.attempts >= 2) {
+      console.error(`[Migration:${batchId}:${fileIndex}] Max retries reached, giving up`);
+      message.ack();
+    } else {
+      console.log(`[Migration:${batchId}:${fileIndex}] Will retry (attempt ${message.attempts + 1}/2)`);
+      message.retry();
+    }
+  }
 }
 
