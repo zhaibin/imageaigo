@@ -383,6 +383,14 @@ export default {
         return await handleAdminFixMissingTags(request, env);
       }
 
+      if (path === '/api/admin/migrate-display-images' && request.method === 'POST') {
+        return await handleAdminMigrateDisplayImages(request, env, ctx);
+      }
+
+      if (path === '/api/admin/migrate-status' && request.method === 'GET') {
+        return await handleAdminMigrateStatus(request, env);
+      }
+
       if (path.match(/^\/api\/admin\/image\/\d+\/reanalyze$/) && request.method === 'POST') {
         const imageId = path.match(/\/api\/admin\/image\/(\d+)\/reanalyze$/)[1];
         return await handleAdminReanalyzeImage(request, env, imageId);
@@ -4523,6 +4531,241 @@ async function handleAdminFixMissingTags(request, env) {
     
   } catch (error) {
     console.error('[FixTags] Error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
+    }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 迁移旧图片生成展示版本
+async function handleAdminMigrateDisplayImages(request, env, ctx) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    console.log('[MigrateDisplay] Starting migration for old large images');
+    
+    // 查询需要迁移的图片（大图且没有展示版本）
+    const { results: images } = await env.DB.prepare(`
+      SELECT id, image_url, display_url, width, height, image_hash
+      FROM images
+      WHERE (width > 1080 OR height > 1080)
+        AND (display_url IS NULL OR display_url = image_url)
+      ORDER BY id
+    `).all();
+    
+    console.log(`[MigrateDisplay] Found ${images.length} images to migrate`);
+    
+    if (images.length === 0) {
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'No images need migration',
+        migrated: 0
+      }), {
+        headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+      });
+    }
+    
+    // 生成迁移批次 ID
+    const migrateBatchId = `migrate_${Date.now()}`;
+    
+    // 初始化批次状态
+    const batchStatus = {
+      batchId: migrateBatchId,
+      total: images.length,
+      completed: 0,
+      failed: 0,
+      skipped: 0,
+      processing: 0,
+      status: 'processing',
+      startTime: Date.now(),
+      lastActivity: Date.now(),
+      currentFile: '',
+      sourceType: 'migration',
+      files: images.map(img => ({ 
+        name: `Image #${img.id}`,
+        imageId: img.id,
+        status: 'pending' 
+      }))
+    };
+    
+    await env.CACHE.put(`batch:${migrateBatchId}`, JSON.stringify(batchStatus), { expirationTtl: 7200 });
+    console.log(`[MigrateDisplay] Batch initialized: ${migrateBatchId}`);
+    
+    // 异步处理迁移
+    const processMigration = async () => {
+      let migrated = 0;
+      let failed = 0;
+      let skipped = 0;
+      
+      console.log(`[MigrateDisplay] Starting to process ${images.length} images`);
+      
+      for (let i = 0; i < images.length; i++) {
+        const image = images[i];
+        
+        try {
+          console.log(`[MigrateDisplay:${i + 1}/${images.length}] Processing image #${image.id}`);
+          
+          // 更新状态：正在处理
+          await updateBatchStatus(env, migrateBatchId, i, 'processing', null, `Image #${image.id}`);
+          
+          // 检查 image_url 是否有效
+          if (!image.image_url || !image.image_url.startsWith('/r2/')) {
+            console.warn(`[MigrateDisplay:${i + 1}] Invalid image_url: ${image.image_url}`);
+            await updateBatchStatus(env, migrateBatchId, i, 'skipped', 'Invalid image_url', `Image #${image.id}`);
+            skipped++;
+            continue;
+          }
+          
+          // 提取原图的 base key
+          const originalKey = image.image_url.replace('/r2/', '');
+          const baseKey = originalKey.replace('-original.jpg', '').replace('.jpg', '').replace('.jpeg', '').replace('.png', '');
+          
+          // 生成展示图（1080px WebP）
+          const originalUrl = `https://imageaigo.cc${image.image_url}`;
+          
+          const displayResponse = await fetch(originalUrl, {
+            cf: {
+              image: {
+                width: 1080,
+                height: 1080,
+                quality: 85,
+                fit: 'scale-down',
+                format: 'webp'
+              }
+            }
+          });
+          
+          if (!displayResponse.ok) {
+            throw new Error(`Image Resizing failed: HTTP ${displayResponse.status}`);
+          }
+          
+          const displayImageData = await displayResponse.arrayBuffer();
+          const displayKey = `${baseKey}-display.webp`;
+          
+          // 上传展示图到 R2
+          await env.R2.put(displayKey, displayImageData, {
+            httpMetadata: { 
+              contentType: 'image/webp',
+              cacheControl: 'public, max-age=31536000'
+            },
+            customMetadata: {
+              uploadedAt: new Date().toISOString(),
+              hash: image.image_hash,
+              type: 'display',
+              originalKey: originalKey,
+              migratedAt: new Date().toISOString()
+            }
+          });
+          
+          const displayUrl = `/r2/${displayKey}`;
+          
+          // 更新数据库
+          await env.DB.prepare(
+            'UPDATE images SET display_url = ? WHERE id = ?'
+          ).bind(displayUrl, image.id).run();
+          
+          console.log(`[MigrateDisplay:${i + 1}] ✅ Migrated: ${(displayImageData.byteLength / 1024).toFixed(2)}KB WebP → Image #${image.id}`);
+          await updateBatchStatus(env, migrateBatchId, i, 'completed', null, `Image #${image.id}`);
+          migrated++;
+          
+          // 每处理 5 张暂停 1 秒，避免压力过大
+          if ((i + 1) % 5 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          
+        } catch (error) {
+          console.error(`[MigrateDisplay:${i + 1}] ❌ Failed:`, error.message);
+          await updateBatchStatus(env, migrateBatchId, i, 'failed', error.message, `Image #${image.id}`);
+          failed++;
+        }
+      }
+      
+      console.log(`[MigrateDisplay] Completed: ${migrated} migrated, ${skipped} skipped, ${failed} failed`);
+      
+      // 标记批次完成
+      try {
+        const statusKey = `batch:${migrateBatchId}`;
+        const currentStatus = await env.CACHE.get(statusKey);
+        if (currentStatus) {
+          const batchStatus = JSON.parse(currentStatus);
+          batchStatus.status = 'completed';
+          batchStatus.endTime = Date.now();
+          batchStatus.duration = batchStatus.endTime - batchStatus.startTime;
+          await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 7200 });
+        }
+      } catch (err) {
+        console.error('[MigrateDisplay] Failed to mark batch as completed:', err);
+      }
+      
+      // 清理缓存
+      console.log('[MigrateDisplay] Clearing image cache...');
+      const cacheKeys = await env.CACHE.list({ prefix: 'images:' });
+      await Promise.all(cacheKeys.keys.map(key => env.CACHE.delete(key.name)));
+    };
+    
+    // 使用 waitUntil 后台处理
+    if (ctx && ctx.waitUntil) {
+      ctx.waitUntil(processMigration());
+    }
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: `Migration started for ${images.length} images`,
+      total: images.length,
+      batchId: migrateBatchId
+    }), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('[MigrateDisplay] Error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message
+    }), {
+      status: 500,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+// 查询迁移状态
+async function handleAdminMigrateStatus(request, env) {
+  if (!await verifyAdminToken(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  try {
+    // 查询需要迁移的图片数量
+    const { results } = await env.DB.prepare(`
+      SELECT COUNT(*) as count
+      FROM images
+      WHERE (width > 1080 OR height > 1080)
+        AND (display_url IS NULL OR display_url = image_url)
+    `).all();
+    
+    const needMigration = results[0]?.count || 0;
+    
+    return new Response(JSON.stringify({
+      success: true,
+      needMigration
+    }), {
+      headers: { ...handleCORS().headers, 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    console.error('[MigrateStatus] Error:', error);
     return new Response(JSON.stringify({
       success: false,
       error: error.message

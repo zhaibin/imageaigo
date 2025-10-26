@@ -637,6 +637,19 @@ export function buildAdminDashboard() {
           <h2>系统管理</h2>
         </div>
         <div style="padding: 30px;">
+          <h3 style="margin-bottom: 20px; color: #333;">🔄 图片迁移</h3>
+          <p style="color: #666; margin-bottom: 20px;">为旧图片生成 WebP 展示版本，提升加载速度</p>
+          
+          <div style="display: grid; gap: 15px; max-width: 500px; margin-bottom: 40px;">
+            <button class="btn" style="background: #28a745;" onclick="triggerMigration()">
+              ⚡ 迁移旧图片（生成展示版本）
+            </button>
+            <div id="migrationInfo" style="background: #fff3cd; padding: 15px; border-radius: 8px; font-size: 0.9rem; color: #856404;">
+              <strong>状态：</strong><span id="migrationStatusText">检查中...</span>
+            </div>
+          </div>
+          <div id="migrationResult" style="display: none; padding: 15px; border-radius: 8px; margin-bottom: 40px;"></div>
+          
           <h3 style="margin-bottom: 20px; color: #333;">🌐 Unsplash 同步</h3>
           <p style="color: #666; margin-bottom: 20px;">从 Unsplash 自动同步最新的免费高质量图片</p>
           
@@ -1243,6 +1256,75 @@ export function buildAdminDashboard() {
     
     // 系统清理
     // Unsplash 同步功能
+    // 检查迁移状态
+    async function checkMigrationStatus() {
+      try {
+        const result = await apiRequest('/api/admin/migrate-status');
+        const statusEl = document.getElementById('migrationStatusText');
+        
+        if (result && result.needMigration !== undefined) {
+          if (result.needMigration > 0) {
+            statusEl.innerHTML = ` <strong>${result.needMigration} 张旧大图片</strong>需要生成 WebP 展示版本`;
+            statusEl.style.color = '#e74c3c';
+          } else {
+            statusEl.innerHTML = ' ✅ 所有图片都已生成展示版本';
+            statusEl.style.color = '#28a745';
+          }
+        }
+      } catch (error) {
+        console.error('Failed to check migration status:', error);
+      }
+    }
+    
+    // 触发迁移
+    async function triggerMigration() {
+      if (!confirm('确定要为旧的大图片生成 WebP 展示版本吗？\n\n这将调用 Image Resizing 服务生成约 50-60 张展示图。')) {
+        return;
+      }
+      
+      const resultEl = document.getElementById('migrationResult');
+      resultEl.textContent = '正在启动迁移...';
+      resultEl.style.display = 'block';
+      resultEl.style.background = '#fff3cd';
+      resultEl.style.color = '#856404';
+      
+      try {
+        const result = await apiRequest('/api/admin/migrate-display-images', {
+          method: 'POST'
+        });
+        
+        if (result && result.success) {
+          resultEl.innerHTML = '<strong>✅ 迁移已启动！</strong><br>' +
+            '<div style="margin-top: 10px; line-height: 1.8;">' +
+            '• 总计: ' + (result.total || 0) + ' 张图片<br>' +
+            '• 批次 ID: ' + (result.batchId || 'N/A') + '<br>' +
+            '<br>' +
+            '💡 迁移正在后台处理，请查看右上角进度面板<br>' +
+            '⏱️ 预计耗时: ' + Math.ceil((result.total || 0) / 5) + '-' + Math.ceil((result.total || 0) / 3) + ' 分钟' +
+            '</div>';
+          resultEl.style.background = '#d4edda';
+          resultEl.style.color = '#155724';
+          
+          // 启动进度监控
+          startProgressMonitoring();
+          
+          // 等待一段时间后刷新迁移状态
+          setTimeout(() => {
+            checkMigrationStatus();
+          }, 5000);
+        } else {
+          resultEl.textContent = '❌ 迁移失败: ' + (result?.error || '未知错误');
+          resultEl.style.background = '#f8d7da';
+          resultEl.style.color = '#721c24';
+        }
+      } catch (error) {
+        console.error('Migration error:', error);
+        resultEl.textContent = '❌ 迁移失败: ' + error.message;
+        resultEl.style.background = '#f8d7da';
+        resultEl.style.color = '#721c24';
+      }
+    }
+    
     async function triggerUnsplashSync() {
       const resultEl = document.getElementById('unsplashSyncResult');
       resultEl.textContent = '正在同步 Unsplash 图片...';
@@ -1371,6 +1453,7 @@ export function buildAdminDashboard() {
       if (tab === 'images') loadImages();
       else if (tab === 'users') loadUsers();
       else if (tab === 'tags') loadTags();
+      else if (tab === 'system') checkMigrationStatus();
     }
     
     // 关闭模态框
@@ -1716,9 +1799,10 @@ export function buildAdminDashboard() {
         '</div>' : '';
       
       // 判断批次类型
+      const isMigration = batch.sourceType === 'migration' || batch.batchId.startsWith('migrate_');
       const isUnsplash = batch.sourceType === 'unsplash' || batch.batchId.startsWith('unsplash_');
-      const batchTypeIcon = isUnsplash ? '🌐' : '📤';
-      const batchTypeName = isUnsplash ? 'Unsplash' : '批次';
+      const batchTypeIcon = isMigration ? '🔄' : (isUnsplash ? '🌐' : '📤');
+      const batchTypeName = isMigration ? '迁移' : (isUnsplash ? 'Unsplash' : '批次');
       
       let html = '<div style="padding: 15px; border-bottom: 1px solid #eee;' + (isStuck ? ' background: #fff9e6;' : '') + '">';
       html += '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">';
