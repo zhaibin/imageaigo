@@ -104,9 +104,6 @@ export async function handleUnsplashSync(env) {
           try {
             console.log(`[UnsplashSync:${photoNum}/${photos.length}] Downloading ${photo.id}...`);
             
-            // 更新状态：正在下载
-            await updateUnsplashBatchStatus(env, syncBatchId, globalIdx, 'processing', null, photo.id);
-            
             // 1. 下载图片（10秒超时）
             const imageUrl = photo.urls.regular;
             const controller = new AbortController();
@@ -222,16 +219,28 @@ export async function handleUnsplashSync(env) {
 }
 
 /**
- * 更新 Unsplash 同步批次状态
+ * 更新 Unsplash 同步批次状态（带节流机制）
  */
 async function updateUnsplashBatchStatus(env, batchId, fileIndex, status, error = null, photoId = null) {
   try {
     const statusKey = `batch:${batchId}`;
-    const currentStatus = await env.CACHE.get(statusKey);
     
-    if (!currentStatus) return;
+    // 初始化缓存和节流器
+    if (!globalThis.batchStatusCache) {
+      globalThis.batchStatusCache = new Map();
+    }
+    if (!globalThis.kvUpdateQueue) {
+      globalThis.kvUpdateQueue = new Map();
+    }
     
-    const batchStatus = JSON.parse(currentStatus);
+    let batchStatus = globalThis.batchStatusCache.get(statusKey);
+    
+    if (!batchStatus) {
+      const currentStatus = await env.CACHE.get(statusKey);
+      if (!currentStatus) return;
+      batchStatus = JSON.parse(currentStatus);
+      globalThis.batchStatusCache.set(statusKey, batchStatus);
+    }
     
     if (batchStatus.files[fileIndex]) {
       batchStatus.files[fileIndex].status = status;
@@ -252,8 +261,36 @@ async function updateUnsplashBatchStatus(env, batchId, fileIndex, status, error 
       batchStatus.currentFile = `unsplash-${photoId}.jpg`;
     }
     
-    await env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 });
+    // 节流机制：减少 KV 写入频率（每 3 个更新一次）
+    const totalProcessed = batchStatus.completed + batchStatus.failed + batchStatus.skipped;
+    const shouldUpdate = 
+      totalProcessed % 3 === 0 || // 每 3 个更新一次
+      totalProcessed === batchStatus.total || // 最后一个
+      status === 'failed'; // 失败立即更新
+    
+    if (shouldUpdate) {
+      // 取消之前的更新队列
+      const existingTimeout = globalThis.kvUpdateQueue.get(statusKey);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+      
+      // 延迟 1 秒后更新，合并多个请求
+      const timeout = setTimeout(() => {
+        env.CACHE.put(statusKey, JSON.stringify(batchStatus), { expirationTtl: 3600 })
+          .then(() => {
+            console.log(`[UpdateUnsplashBatchStatus] KV updated: ${totalProcessed}/${batchStatus.total}`);
+            globalThis.kvUpdateQueue.delete(statusKey);
+          })
+          .catch(err => {
+            console.warn('[UpdateUnsplashBatchStatus] KV update failed:', err.message);
+          });
+      }, 1000);
+      
+      globalThis.kvUpdateQueue.set(statusKey, timeout);
+    }
+    
   } catch (err) {
-    console.error(`[UpdateUnsplashBatchStatus] Error:`, err);
+    console.error(`[UpdateUnsplashBatchStatus] Error:`, err.message);
   }
 }
