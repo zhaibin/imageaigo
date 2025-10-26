@@ -35,7 +35,8 @@ export async function handleQueue(batch, env) {
 // 处理单个队列消息
 async function processQueueMessage(message, env) {
   const startTime = Date.now();
-  const { batchId, fileIndex, fileName, imageHash, sourceType, userId, imageId, imageUrl, width, height } = message.body;
+  const messageBody = message.body;
+  const { batchId, fileIndex, fileName, imageHash, sourceType, userId } = messageBody;
   
   try {
     console.log(`[QueueConsumer:${batchId}:${fileIndex}] Processing ${fileName} (source: ${sourceType || 'upload'})`);
@@ -53,6 +54,7 @@ async function processQueueMessage(message, env) {
     
     // 处理迁移任务
     if (sourceType === 'migration') {
+      const { imageId, imageUrl, width, height } = messageBody;
       await processMigrationTask(message, env, batchId, fileIndex, imageId, imageUrl, imageHash, width, height);
       return;
     }
